@@ -302,12 +302,14 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     GtkWidget *help_btn = create_button("help-browser", "Help");
     gtk_widget_set_tooltip_text(help_btn, "Show help and keyboard shortcuts (F1)");
     g_signal_connect(help_btn, "clicked", G_CALLBACK(on_help_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), help_btn, FALSE, FALSE, 0);
 
     GtkWidget *settings_btn = create_button("preferences-system", "Settings");
     gtk_widget_set_tooltip_text(settings_btn, "Open settings dialog (Ctrl+,)\nConfigure font, tabs, auto-compile, speed, and layout");
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), NULL);
+
+    /* Pack settings and help buttons together */
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), settings_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), help_btn, FALSE, FALSE, 0);
 
     GtkWidget *exit_btn = create_button("application-exit", "Exit");
     gtk_widget_set_tooltip_text(exit_btn, "Exit the application (Ctrl+Q)\nPrompts to save if there are unsaved changes");

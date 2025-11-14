@@ -110,8 +110,16 @@ void editor_settings_load(EditorSettings *settings) {
         double dvalue;
         char strvalue[256];
 
-        if (sscanf(line, "font_family=%255s", strvalue) == 1) {
-            strncpy(settings->font_family, strvalue, sizeof(settings->font_family) - 1);
+        if (strncmp(line, "font_family=", 12) == 0) {
+            /* Read everything after '=' until newline */
+            char *value = line + 12;
+            /* Trim trailing newline */
+            size_t len = strlen(value);
+            if (len > 0 && value[len-1] == '\n') {
+                value[len-1] = '\0';
+            }
+            strncpy(settings->font_family, value, sizeof(settings->font_family) - 1);
+            settings->font_family[sizeof(settings->font_family) - 1] = '\0';
         } else if (sscanf(line, "font_size=%d", &value) == 1) {
             if (value >= 8 && value <= 24) {
                 settings->font_size = value;
