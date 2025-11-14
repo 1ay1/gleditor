@@ -8,12 +8,20 @@
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
+/* Split orientation options */
+typedef enum {
+    SPLIT_HORIZONTAL = 0,
+    SPLIT_VERTICAL = 1
+} SplitOrientation;
+
 /* Editor settings structure */
 typedef struct {
     int font_size;
     int tab_width;
     bool auto_compile;
     int preview_fps;
+    double shader_speed;
+    SplitOrientation split_orientation;
 } EditorSettings;
 
 /* Default settings */
@@ -21,7 +29,9 @@ typedef struct {
     .font_size = 12, \
     .tab_width = 4, \
     .auto_compile = true, \
-    .preview_fps = 60 \
+    .preview_fps = 60, \
+    .shader_speed = 1.0, \
+    .split_orientation = SPLIT_HORIZONTAL \
 }
 
 /**

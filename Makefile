@@ -162,14 +162,26 @@ LDFLAGS += -lm
 SHADER_LIB_SOURCES := $(SHADER_LIB_DIR)/shader_core.c \
                       $(SHADER_LIB_DIR)/shadertoy_compat.c \
                       $(SHADER_LIB_DIR)/shader_adaptation.c \
-                      $(SHADER_LIB_DIR)/neowall_shader_api.c
+                      $(SHADER_LIB_DIR)/neowall_shader_api.c \
+                      $(SHADER_LIB_DIR)/shader_utils.c
+
+# Editor component sources
+EDITOR_DIR := $(SRC_DIR)/editor
+EDITOR_SOURCES := $(EDITOR_DIR)/editor_text.c \
+                  $(EDITOR_DIR)/editor_preview.c \
+                  $(EDITOR_DIR)/editor_toolbar.c \
+                  $(EDITOR_DIR)/editor_statusbar.c \
+                  $(EDITOR_DIR)/editor_error_panel.c \
+                  $(EDITOR_DIR)/file_operations.c \
+                  $(EDITOR_DIR)/editor_window.c \
+                  $(EDITOR_DIR)/editor_settings.c
 
 # Main application sources
 APP_SOURCES := $(SRC_DIR)/main.c \
                $(SRC_DIR)/shader_editor.c
 
 # All sources
-SOURCES := $(SHADER_LIB_SOURCES) $(APP_SOURCES)
+SOURCES := $(SHADER_LIB_SOURCES) $(EDITOR_SOURCES) $(APP_SOURCES)
 
 # Object files
 OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES))
@@ -189,10 +201,18 @@ $(BUILD_DIR) $(BIN_DIR):
 $(BUILD_DIR)/shader_lib:
 	@mkdir -p $@
 
+$(BUILD_DIR)/editor:
+	@mkdir -p $@
+
 # Compile shader library
 $(BUILD_DIR)/shader_lib/%.o: $(SHADER_LIB_DIR)/%.c | $(BUILD_DIR)/shader_lib
 	@echo "  CC      $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile editor components
+$(BUILD_DIR)/editor/%.o: $(EDITOR_DIR)/%.c | $(BUILD_DIR)/editor
+	@echo "  CC      $<"
+	@$(CC) $(CFLAGS) -I$(SRC_DIR) -c $< -o $@
 
 # Compile main application
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)

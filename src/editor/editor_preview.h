@@ -1,5 +1,5 @@
-/* gleditor - OpenGL Preview Component
- * Handles live shader rendering and preview
+/* OpenGL Preview Component - Header
+ * Handles the live shader preview rendering
  */
 
 #ifndef EDITOR_PREVIEW_H
@@ -8,98 +8,110 @@
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
-/**
- * Preview component context
- */
-typedef struct {
-    GtkWidget *gl_area;
-    GtkWidget *container;
-    unsigned int shader_program;
-    unsigned int vao;
-    unsigned int vbo;
-    bool initialized;
-    bool shader_valid;
-    double start_time;
-    bool paused;
-    double pause_time;
-    float mouse_x;
-    float mouse_y;
-    int fps;
-    unsigned int animation_timer_id;
-    void (*on_error)(const char *message, void *user_data);
-    void *user_data;
-} EditorPreview;
+#ifdef HAVE_GLES3
+#include <GLES3/gl3.h>
+#else
+#include <GLES2/gl2.h>
+#endif
+
+/* Preview state callback signature */
+typedef void (*editor_preview_error_callback_t)(const char *error, gpointer user_data);
 
 /**
- * Create preview component
- * @param fps Target frames per second
- * @return EditorPreview context
+ * Create the OpenGL preview widget
+ * 
+ * @return The GL area widget
  */
-EditorPreview *editor_preview_create(int fps);
+GtkWidget *editor_preview_create(void);
 
 /**
- * Destroy preview component
- * @param preview Preview context
+ * Compile and update the shader program
+ * 
+ * @param shader_code GLSL shader source code
+ * @return true if compilation succeeded, false otherwise
  */
-void editor_preview_destroy(EditorPreview *preview);
+bool editor_preview_compile_shader(const char *shader_code);
 
 /**
- * Get the preview widget
- * @param preview Preview context
- * @return GtkWidget container
+ * Get the last compilation error message
+ * 
+ * @return Error message (static, do not free) or NULL if no error
  */
-GtkWidget *editor_preview_get_widget(EditorPreview *preview);
+const char *editor_preview_get_error(void);
 
 /**
- * Compile and load shader
- * @param preview Preview context
- * @param shader_source GLSL shader source code
- * @return true if successful, false on error
+ * Check if a shader is currently loaded
+ * 
+ * @return true if a valid shader is loaded
  */
-bool editor_preview_compile_shader(EditorPreview *preview, const char *shader_source);
+bool editor_preview_has_shader(void);
 
 /**
- * Set pause state
- * @param preview Preview context
+ * Set animation paused state
+ * 
  * @param paused true to pause, false to resume
  */
-void editor_preview_set_paused(EditorPreview *preview, bool paused);
+void editor_preview_set_paused(bool paused);
 
 /**
- * Check if paused
- * @param preview Preview context
+ * Check if animation is paused
+ * 
  * @return true if paused
  */
-bool editor_preview_is_paused(EditorPreview *preview);
+bool editor_preview_is_paused(void);
 
 /**
- * Reset animation time to zero
- * @param preview Preview context
+ * Set animation speed multiplier
+ * 
+ * @param speed Speed multiplier (1.0 = normal, 2.0 = double speed, etc.)
  */
-void editor_preview_reset_time(EditorPreview *preview);
+void editor_preview_set_speed(float speed);
 
 /**
- * Set FPS
- * @param preview Preview context
- * @param fps Target frames per second
+ * Get animation speed multiplier
+ * 
+ * @return Current speed multiplier
  */
-void editor_preview_set_fps(EditorPreview *preview, int fps);
+float editor_preview_get_speed(void);
+
+/**
+ * Reset shader time to zero
+ */
+void editor_preview_reset_time(void);
 
 /**
  * Get current FPS
- * @param preview Preview context
- * @return Current FPS
+ * 
+ * @return Frames per second
  */
-double editor_preview_get_current_fps(EditorPreview *preview);
+double editor_preview_get_fps(void);
+
+/**
+ * Get mouse position in normalized coordinates
+ * 
+ * @param x Output: X coordinate (0.0 to 1.0)
+ * @param y Output: Y coordinate (0.0 to 1.0)
+ */
+void editor_preview_get_mouse(float *x, float *y);
 
 /**
  * Set error callback
- * @param preview Preview context
- * @param callback Error callback function
- * @param user_data User data for callback
+ * Called when shader compilation fails
+ * 
+ * @param callback Callback function
+ * @param user_data User data passed to callback
  */
-void editor_preview_set_error_callback(EditorPreview *preview,
-                                       void (*callback)(const char *, void *),
-                                       void *user_data);
+void editor_preview_set_error_callback(editor_preview_error_callback_t callback,
+                                       gpointer user_data);
+
+/**
+ * Force a redraw of the preview
+ */
+void editor_preview_queue_render(void);
+
+/**
+ * Destroy the preview and free resources
+ */
+void editor_preview_destroy(void);
 
 #endif /* EDITOR_PREVIEW_H */

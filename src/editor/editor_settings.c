@@ -33,6 +33,8 @@ void editor_settings_save(const EditorSettings *settings) {
     fprintf(f, "tab_width=%d\n", settings->tab_width);
     fprintf(f, "auto_compile=%d\n", settings->auto_compile ? 1 : 0);
     fprintf(f, "preview_fps=%d\n", settings->preview_fps);
+    fprintf(f, "shader_speed=%.2f\n", settings->shader_speed);
+    fprintf(f, "split_orientation=%d\n", settings->split_orientation);
 
     fclose(f);
 }
@@ -46,6 +48,8 @@ void editor_settings_load(EditorSettings *settings) {
     settings->tab_width = 4;
     settings->auto_compile = true;
     settings->preview_fps = 60;
+    settings->shader_speed = 1.0;
+    settings->split_orientation = SPLIT_HORIZONTAL;
 
     const char *home = getenv("HOME");
     if (!home) return;
@@ -62,6 +66,7 @@ void editor_settings_load(EditorSettings *settings) {
         if (line[0] == '#' || line[0] == '\n') continue;
 
         int value;
+        double dvalue;
         if (sscanf(line, "font_size=%d", &value) == 1) {
             if (value >= 8 && value <= 24) {
                 settings->font_size = value;
@@ -75,6 +80,14 @@ void editor_settings_load(EditorSettings *settings) {
         } else if (sscanf(line, "preview_fps=%d", &value) == 1) {
             if (value >= 15 && value <= 120) {
                 settings->preview_fps = value;
+            }
+        } else if (sscanf(line, "shader_speed=%lf", &dvalue) == 1) {
+            if (dvalue >= 0.1 && dvalue <= 5.0) {
+                settings->shader_speed = dvalue;
+            }
+        } else if (sscanf(line, "split_orientation=%d", &value) == 1) {
+            if (value == 0 || value == 1) {
+                settings->split_orientation = (SplitOrientation)value;
             }
         }
     }
@@ -114,6 +127,26 @@ static void on_auto_compile_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer d
     (void)pspec;
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->auto_compile = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
+}
+
+/* Shader speed changed */
+static void on_shader_speed_changed(GtkSpinButton *spin, gpointer data) {
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->shader_speed = gtk_spin_button_get_value(spin);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
+}
+
+/* Split orientation changed */
+static void on_split_orientation_changed(GtkComboBox *combo, gpointer data) {
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->split_orientation = (SplitOrientation)gtk_combo_box_get_active(combo);
     editor_settings_save(cb_data->settings);
     if (cb_data->on_change) {
         cb_data->on_change(cb_data->settings, cb_data->user_data);
@@ -196,6 +229,31 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_switch_set_active(GTK_SWITCH(auto_switch), settings->auto_compile);
     g_signal_connect(auto_switch, "notify::active", G_CALLBACK(on_auto_compile_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), auto_switch, 1, row, 1, 1);
+    row++;
+
+    /* Shader speed */
+    GtkWidget *speed_label = gtk_label_new("🚀 Shader Speed:");
+    gtk_widget_set_halign(speed_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), speed_label, 0, row, 1, 1);
+
+    GtkWidget *speed_spin = gtk_spin_button_new_with_range(0.1, 5.0, 0.1);
+    gtk_spin_button_set_digits(GTK_SPIN_BUTTON(speed_spin), 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(speed_spin), settings->shader_speed);
+    g_signal_connect(speed_spin, "value-changed", G_CALLBACK(on_shader_speed_changed), &cb_data);
+    gtk_grid_attach(GTK_GRID(grid), speed_spin, 1, row, 1, 1);
+    row++;
+
+    /* Split orientation */
+    GtkWidget *split_label = gtk_label_new("📐 Split Layout:");
+    gtk_widget_set_halign(split_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), split_label, 0, row, 1, 1);
+
+    GtkWidget *split_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Horizontal (Side by Side)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Vertical (Top and Bottom)");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), settings->split_orientation);
+    g_signal_connect(split_combo, "changed", G_CALLBACK(on_split_orientation_changed), &cb_data);
+    gtk_grid_attach(GTK_GRID(grid), split_combo, 1, row, 1, 1);
     row++;
 
     /* Separator */

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="600" height="200" viewBox="0 0 300 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f0"/>
+      <stop offset="100%" stop-color="#0ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark bg -->
+  <rect width="300" height="100" fill="#111" rx="12"/>
+
+  <!-- Geeky lowercase -->
+  <text x="150" y="68"
+        font-family="monospace"
+        font-size="52" font-weight="bold"
+        fill="url(#g)"
+        text-anchor="middle"
+        letter-spacing="3">
+    gleditor
+  </text>
+</svg>

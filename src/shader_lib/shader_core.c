@@ -10,6 +10,43 @@
 #include "shader.h"
 #include "shadertoy_compat.h"
 
+/* Global error log buffer for detailed error reporting */
+#define MAX_ERROR_LOG_SIZE 16384
+static char g_last_error_log[MAX_ERROR_LOG_SIZE];
+static size_t g_error_log_pos = 0;
+
+/* Clear error log */
+static void clear_error_log(void) {
+    g_last_error_log[0] = '\0';
+    g_error_log_pos = 0;
+}
+
+/* Append to error log */
+static void append_to_error_log(const char *format, ...) {
+    if (g_error_log_pos >= MAX_ERROR_LOG_SIZE - 1) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(g_last_error_log + g_error_log_pos,
+                           MAX_ERROR_LOG_SIZE - g_error_log_pos,
+                           format, args);
+    va_end(args);
+
+    if (written > 0) {
+        g_error_log_pos += written;
+        if (g_error_log_pos >= MAX_ERROR_LOG_SIZE) {
+            g_error_log_pos = MAX_ERROR_LOG_SIZE - 1;
+        }
+    }
+}
+
+/* Get last error log */
+const char *shader_get_last_error_log(void) {
+    return g_last_error_log;
+}
+
 /* Shader library doesn't have access to neowall.h constants */
 #ifndef MAX_PATH_LENGTH
 #define MAX_PATH_LENGTH 4096
@@ -196,7 +233,7 @@ static void print_shader_with_line_numbers(const char *source, const char *type)
 }
 
 /**
- * Compile a shader
+ * Compile a shader from source
  *
  * @param type Shader type (GL_VERTEX_SHADER or GL_FRAGMENT_SHADER)
  * @param source Shader source code
@@ -211,6 +248,7 @@ static GLuint compile_shader(GLenum type, const char *source) {
     GLuint shader = glCreateShader(type);
     if (shader == 0) {
         log_error("Failed to create %s shader", type_str);
+        append_to_error_log("ERROR: Failed to create %s shader (glCreateShader returned 0)\n", type_str);
         return 0;
     }
 
@@ -221,6 +259,9 @@ static GLuint compile_shader(GLenum type, const char *source) {
     GLint compiled;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
     if (!compiled) {
+        append_to_error_log("\n=== %s SHADER COMPILATION FAILED ===\n\n",
+                           type_str == "vertex" ? "VERTEX" : "FRAGMENT");
+
         GLint info_len = 0;
         glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_len);
         if (info_len > 1) {
@@ -228,11 +269,33 @@ static GLuint compile_shader(GLenum type, const char *source) {
             if (info_log) {
                 glGetShaderInfoLog(shader, info_len, NULL, info_log);
                 log_error("%s shader compilation failed: %s", type_str, info_log);
+
+                /* Append full error log to global buffer */
+                append_to_error_log("%s", info_log);
+                append_to_error_log("\n\n");
+
                 free(info_log);
             }
         } else {
             log_error("%s shader compilation failed (no log available)", type_str);
+            append_to_error_log("No detailed error information available from OpenGL.\n\n");
         }
+
+        /* Add shader source context */
+        append_to_error_log("=== SHADER SOURCE (with line numbers) ===\n");
+
+        /* Add line numbers to source for error context */
+        char *source_copy = strdup(source);
+        if (source_copy) {
+            char *line = strtok(source_copy, "\n");
+            int line_num = 1;
+            while (line && strlen(g_last_error_log) < MAX_ERROR_LOG_SIZE - 256) {
+                append_to_error_log("%4d | %s\n", line_num++, line);
+                line = strtok(NULL, "\n");
+            }
+            free(source_copy);
+        }
+
         glDeleteShader(shader);
         return 0;
     }
@@ -259,6 +322,9 @@ bool shader_create_program_from_sources(const char *vertex_src,
         log_error("Invalid program pointer");
         return false;
     }
+
+    /* Clear previous error log */
+    clear_error_log();
 
     /* Compile shaders */
     GLuint vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_src);
@@ -292,6 +358,8 @@ bool shader_create_program_from_sources(const char *vertex_src,
     GLint linked;
     glGetProgramiv(prog, GL_LINK_STATUS, &linked);
     if (!linked) {
+        append_to_error_log("\n=== PROGRAM LINKING FAILED ===\n\n");
+
         GLint info_len = 0;
         glGetProgramiv(prog, GL_INFO_LOG_LENGTH, &info_len);
         if (info_len > 1) {
@@ -299,9 +367,16 @@ bool shader_create_program_from_sources(const char *vertex_src,
             if (info_log) {
                 glGetProgramInfoLog(prog, info_len, NULL, info_log);
                 log_error("Program linking failed: %s", info_log);
+
+                /* Append full linking error to global buffer */
+                append_to_error_log("%s\n", info_log);
+
                 free(info_log);
             }
+        } else {
+            append_to_error_log("No detailed linking error information available.\n");
         }
+
         glDeleteProgram(prog);
         glDeleteShader(vertex_shader);
         glDeleteShader(fragment_shader);

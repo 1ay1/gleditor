@@ -1,5 +1,5 @@
-/* gleditor - Text Editor Component
- * Handles the code editor with syntax highlighting and features
+/* Text Editor Component - Header
+ * Handles the GLSL source code editor with syntax highlighting
  */
 
 #ifndef EDITOR_TEXT_H
@@ -9,114 +9,129 @@
 #include <gtksourceview/gtksource.h>
 #include <stdbool.h>
 
-/**
- * Text editor context
- */
+/* Editor configuration */
 typedef struct {
-    GtkWidget *source_view;
-    GtkSourceBuffer *source_buffer;
-    GtkWidget *scrolled_window;
-    bool modified;
-    char *current_file;
-    void (*on_modified)(void *user_data);
-    void (*on_cursor_moved)(int line, int col, void *user_data);
-    void *user_data;
-} EditorText;
+    int tab_width;
+    int font_size;
+    bool auto_compile;
+    bool show_line_numbers;
+    bool highlight_current_line;
+    bool show_minimap;
+} editor_text_config_t;
+
+/* Text change callback signature */
+typedef void (*editor_text_change_callback_t)(const char *text, gpointer user_data);
+
+/* Cursor move callback signature */
+typedef void (*editor_cursor_move_callback_t)(int line, int column, gpointer user_data);
 
 /**
- * Create text editor component
- * @param font_size Font size in points
- * @param tab_width Tab width in spaces
- * @return EditorText context
+ * Create the text editor widget
+ * 
+ * @param config Initial configuration (NULL for defaults)
+ * @return The text editor widget (GtkScrolledWindow containing GtkSourceView)
  */
-EditorText *editor_text_create(int font_size, int tab_width);
+GtkWidget *editor_text_create(const editor_text_config_t *config);
 
 /**
- * Destroy text editor component
- * @param editor Text editor context
+ * Get the text editor configuration
+ * 
+ * @return Current configuration
  */
-void editor_text_destroy(EditorText *editor);
+editor_text_config_t editor_text_get_config(void);
 
 /**
- * Get the scrolled window widget
- * @param editor Text editor context
- * @return GtkWidget scrolled window
+ * Update the text editor configuration
+ * 
+ * @param config New configuration
  */
-GtkWidget *editor_text_get_widget(EditorText *editor);
+void editor_text_set_config(const editor_text_config_t *config);
 
 /**
- * Set text content
- * @param editor Text editor context
- * @param text Text to set
+ * Get the text buffer
+ * 
+ * @return GtkSourceBuffer containing the shader code
  */
-void editor_text_set_content(EditorText *editor, const char *text);
+GtkSourceBuffer *editor_text_get_buffer(void);
 
 /**
- * Get text content
- * @param editor Text editor context
- * @return Allocated string (must be freed)
+ * Get the source view widget
+ * 
+ * @return GtkSourceView widget
  */
-char *editor_text_get_content(EditorText *editor);
+GtkWidget *editor_text_get_view(void);
 
 /**
- * Set font size
- * @param editor Text editor context
+ * Get the current shader code
+ * 
+ * @return Shader source code (caller must free)
+ */
+char *editor_text_get_code(void);
+
+/**
+ * Set the shader code
+ * 
+ * @param code Shader source code
+ */
+void editor_text_set_code(const char *code);
+
+/**
+ * Get cursor position
+ * 
+ * @param line Output: current line (1-based)
+ * @param column Output: current column (1-based)
+ */
+void editor_text_get_cursor_position(int *line, int *column);
+
+/**
+ * Set text change callback
+ * Called when the text buffer is modified
+ * 
+ * @param callback Callback function
+ * @param user_data User data passed to callback
+ */
+void editor_text_set_change_callback(editor_text_change_callback_t callback, 
+                                     gpointer user_data);
+
+/**
+ * Set cursor move callback
+ * Called when the cursor position changes
+ * 
+ * @param callback Callback function
+ * @param user_data User data passed to callback
+ */
+void editor_text_set_cursor_callback(editor_cursor_move_callback_t callback,
+                                     gpointer user_data);
+
+/**
+ * Apply font size
+ * 
  * @param size Font size in points
  */
-void editor_text_set_font_size(EditorText *editor, int size);
+void editor_text_set_font_size(int size);
 
 /**
- * Set tab width
- * @param editor Text editor context
+ * Apply tab width
+ * 
  * @param width Tab width in spaces
  */
-void editor_text_set_tab_width(EditorText *editor, int width);
+void editor_text_set_tab_width(int width);
 
 /**
- * Check if content is modified
- * @param editor Text editor context
- * @return true if modified
+ * Check if text has been modified
+ * 
+ * @return true if modified since last save
  */
-bool editor_text_is_modified(EditorText *editor);
+bool editor_text_is_modified(void);
 
 /**
- * Mark content as saved (clear modified flag)
- * @param editor Text editor context
+ * Mark text as saved (clear modified flag)
  */
-void editor_text_mark_saved(EditorText *editor);
+void editor_text_mark_saved(void);
 
 /**
- * Set current file path
- * @param editor Text editor context
- * @param path File path or NULL
+ * Destroy the text editor and free resources
  */
-void editor_text_set_file_path(EditorText *editor, const char *path);
-
-/**
- * Get current file path
- * @param editor Text editor context
- * @return File path or NULL
- */
-const char *editor_text_get_file_path(EditorText *editor);
-
-/**
- * Set modified callback
- * @param editor Text editor context
- * @param callback Callback function
- * @param user_data User data for callback
- */
-void editor_text_set_modified_callback(EditorText *editor, 
-                                       void (*callback)(void *user_data),
-                                       void *user_data);
-
-/**
- * Set cursor moved callback
- * @param editor Text editor context
- * @param callback Callback function (line, col, user_data)
- * @param user_data User data for callback
- */
-void editor_text_set_cursor_callback(EditorText *editor,
-                                     void (*callback)(int, int, void *),
-                                     void *user_data);
+void editor_text_destroy(void);
 
 #endif /* EDITOR_TEXT_H */

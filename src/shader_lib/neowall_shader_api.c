@@ -53,7 +53,13 @@ neowall_shader_result_t neowall_shader_compile(
         result.program = program;
         result.success = true;
     } else {
-        result.error_message = strdup("Shader compilation failed - check console for details");
+        /* Get detailed error log from shader_core */
+        const char *error_log = shader_get_last_error_log();
+        if (error_log && strlen(error_log) > 0) {
+            result.error_message = strdup(error_log);
+        } else {
+            result.error_message = strdup("Shader compilation failed with no error details available");
+        }
         result.success = false;
     }
 
@@ -96,7 +102,13 @@ neowall_shader_result_t neowall_shader_compile_file(
         result.program = program;
         result.success = true;
     } else {
-        result.error_message = strdup("Shader compilation failed - check console for details");
+        /* Get detailed error log from shader_core */
+        const char *error_log = shader_get_last_error_log();
+        if (error_log && strlen(error_log) > 0) {
+            result.error_message = strdup(error_log);
+        } else {
+            result.error_message = strdup("Shader compilation failed with no error details available");
+        }
         result.success = false;
     }
 

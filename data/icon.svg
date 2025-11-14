@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f0"/>
+      <stop offset="100%" stop-color="#0ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded dark badge -->
+  <rect x="0" y="0" width="128" height="129" rx="16" fill="#111"/>
+
+  <!-- Bigger g, lifted up for balance -->
+  <text x="64" y="80"
+        font-family="monospace"
+        font-size="100" font-weight="bold"
+        fill="url(#g)"
+        text-anchor="middle"
+        letter-spacing="2">
+    g
+  </text>
+</svg>
