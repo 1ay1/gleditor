@@ -200,15 +200,7 @@ static void on_shader_speed_changed(GtkSpinButton *spin, gpointer data) {
     }
 }
 
-/* Split orientation changed */
-static void on_split_orientation_changed(GtkComboBox *combo, gpointer data) {
-    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
-    cb_data->settings->split_orientation = (SplitOrientation)gtk_combo_box_get_active(combo);
-    editor_settings_save(cb_data->settings);
-    if (cb_data->on_change) {
-        cb_data->on_change(cb_data->settings, cb_data->user_data);
-    }
-}
+
 
 /* Callback stubs for new settings */
 static void on_theme_changed(GtkComboBox *combo, gpointer data) {
@@ -470,29 +462,6 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_tooltip_text(speed_spin, "Animation speed multiplier (0.1-5.0)\n1.0 = normal, 2.0 = double, 0.5 = half");
     g_signal_connect(speed_spin, "value-changed", G_CALLBACK(on_shader_speed_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(preview_grid), speed_spin, 1, row, 1, 1);
-    row++;
-
-    /* ===== LAYOUT TAB ===== */
-    GtkWidget *layout_grid = gtk_grid_new();
-    gtk_grid_set_row_spacing(GTK_GRID(layout_grid), 10);
-    gtk_grid_set_column_spacing(GTK_GRID(layout_grid), 12);
-    gtk_container_set_border_width(GTK_CONTAINER(layout_grid), 12);
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), layout_grid, gtk_label_new("📐 Layout"));
-
-    row = 0;
-
-    /* Split orientation */
-    GtkWidget *split_label = gtk_label_new("Split Orientation:");
-    gtk_widget_set_halign(split_label, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(layout_grid), split_label, 0, row, 1, 1);
-
-    GtkWidget *split_combo = gtk_combo_box_text_new();
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Horizontal (Side by Side)");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Vertical (Top and Bottom)");
-    gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), settings->split_orientation);
-    gtk_widget_set_tooltip_text(split_combo, "Layout for editor and preview\nAlso adjustable via toolbar");
-    g_signal_connect(split_combo, "changed", G_CALLBACK(on_split_orientation_changed), &cb_data);
-    gtk_grid_attach(GTK_GRID(layout_grid), split_combo, 1, row, 1, 1);
     row++;
 
     gtk_widget_show_all(dialog);
