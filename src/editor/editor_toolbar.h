@@ -31,6 +31,7 @@ typedef struct {
     editor_toolbar_callback_t on_reset;
     editor_toolbar_callback_t on_install;
     editor_toolbar_callback_t on_settings;
+    editor_toolbar_callback_t on_help;
     editor_toolbar_callback_t on_exit;
     editor_toolbar_callback_t on_toggle_split;
     editor_toolbar_view_callback_t on_view_mode_changed;

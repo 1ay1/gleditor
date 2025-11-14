@@ -102,6 +102,14 @@ static void on_settings_clicked(GtkWidget *widget, gpointer user_data) {
     }
 }
 
+static void on_help_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    if (toolbar_state.callbacks.on_help) {
+        toolbar_state.callbacks.on_help(toolbar_state.callbacks.user_data);
+    }
+}
+
 static void on_exit_clicked(GtkWidget *widget, gpointer user_data) {
     (void)widget;
     (void)user_data;
@@ -290,6 +298,11 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_preview_button, FALSE, FALSE, 0);
 
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), view_group_box, FALSE, FALSE, 0);
+
+    GtkWidget *help_btn = create_button("help-browser", "Help");
+    gtk_widget_set_tooltip_text(help_btn, "Show help and keyboard shortcuts (F1)");
+    g_signal_connect(help_btn, "clicked", G_CALLBACK(on_help_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), help_btn, FALSE, FALSE, 0);
 
     GtkWidget *settings_btn = create_button("preferences-system", "Settings");
     gtk_widget_set_tooltip_text(settings_btn, "Open settings dialog (Ctrl+,)\nConfigure font, tabs, auto-compile, speed, and layout");

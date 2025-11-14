@@ -9,6 +9,7 @@
 #include "editor_statusbar.h"
 #include "editor_settings.h"
 #include "editor_error_panel.h"
+#include "editor_help.h"
 #include "file_operations.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -240,6 +241,32 @@ static void on_settings_clicked(gpointer user_data) {
         on_settings_changed,
         NULL
     );
+}
+
+static void on_help_clicked(gpointer user_data) {
+    (void)user_data;
+
+    /* Show help dialog */
+    editor_help_show_dialog(GTK_WINDOW(window_state.window));
+}
+
+static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+
+    /* F1 - Help */
+    if (event->keyval == GDK_KEY_F1) {
+        on_help_clicked(NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+, - Settings */
+    if ((event->state & GDK_CONTROL_MASK) && event->keyval == GDK_KEY_comma) {
+        on_settings_clicked(NULL);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 static void on_toggle_split_clicked(gpointer user_data) {
@@ -488,6 +515,7 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     gtk_window_set_default_size(GTK_WINDOW(window_state.window), width, height);
     g_signal_connect(window_state.window, "delete-event", G_CALLBACK(on_delete_event), NULL);
     g_signal_connect(window_state.window, "destroy", G_CALLBACK(on_destroy), NULL);
+    g_signal_connect(window_state.window, "key-press-event", G_CALLBACK(on_key_press), NULL);
 
     /* Create main container */
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -503,6 +531,7 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
         .on_reset = on_reset_clicked,
         .on_install = on_install_clicked,
         .on_settings = on_settings_clicked,
+        .on_help = on_help_clicked,
         .on_exit = on_exit_clicked,
         .on_toggle_split = on_toggle_split_clicked,
         .on_view_mode_changed = on_view_mode_changed,
