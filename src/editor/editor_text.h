@@ -8,6 +8,7 @@
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 #include <stdbool.h>
+#include "editor_settings.h"
 
 /* Editor configuration */
 typedef struct {
@@ -32,6 +33,13 @@ typedef void (*editor_cursor_move_callback_t)(int line, int column, gpointer use
  * @return The text editor widget (GtkScrolledWindow containing GtkSourceView)
  */
 GtkWidget *editor_text_create(const editor_text_config_t *config);
+
+/**
+ * Apply all settings from EditorSettings structure
+ * 
+ * @param settings Settings to apply
+ */
+void editor_text_apply_all_settings(const EditorSettings *settings);
 
 /**
  * Get the text editor configuration

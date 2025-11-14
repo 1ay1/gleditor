@@ -291,13 +291,10 @@ static void on_settings_changed(EditorSettings *settings, gpointer user_data) {
 
     if (!settings) return;
 
-    /* Apply font size to editor */
-    editor_text_set_font_size(settings->font_size);
+    /* Apply all editor settings */
+    editor_text_apply_all_settings(settings);
 
-    /* Apply tab width */
-    editor_text_set_tab_width(settings->tab_width);
-
-    /* Apply shader speed */
+    /* Apply shader speed to preview */
     editor_preview_set_speed((float)settings->shader_speed);
 
     /* Update compile button visibility based on auto-compile setting */
@@ -554,8 +551,7 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     editor_statusbar_set_error_click_callback(on_error_status_clicked, NULL);
 
     /* Apply initial settings to editor */
-    editor_text_set_font_size(editor_settings.font_size);
-    editor_text_set_tab_width(editor_settings.tab_width);
+    editor_text_apply_all_settings(&editor_settings);
 
     /* Apply shader speed to preview */
     editor_preview_set_speed((float)editor_settings.shader_speed);

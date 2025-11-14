@@ -3,6 +3,7 @@
  */
 
 #include "editor_text.h"
+#include "editor_settings.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -174,6 +175,77 @@ void editor_text_set_config(const editor_text_config_t *config) {
         gtk_widget_override_font(editor_state.source_view, font);
         pango_font_description_free(font);
     }
+}
+
+void editor_text_apply_all_settings(const EditorSettings *settings) {
+    if (!settings || !editor_state.initialized || !editor_state.source_view) {
+        return;
+    }
+
+    /* Apply theme/color scheme */
+    GtkSourceStyleSchemeManager *scheme_manager = gtk_source_style_scheme_manager_get_default();
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, settings->theme);
+    if (scheme) {
+        gtk_source_buffer_set_style_scheme(editor_state.source_buffer, scheme);
+    }
+
+    /* Apply appearance settings */
+    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(editor_state.source_view),
+                                          settings->show_line_numbers);
+    gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(editor_state.source_view),
+                                               settings->highlight_current_line);
+    gtk_source_view_set_show_right_margin(GTK_SOURCE_VIEW(editor_state.source_view),
+                                          settings->show_right_margin);
+    gtk_source_view_set_right_margin_position(GTK_SOURCE_VIEW(editor_state.source_view),
+                                              settings->right_margin_position);
+
+    /* Apply bracket matching */
+    gtk_source_buffer_set_highlight_matching_brackets(editor_state.source_buffer,
+                                                      settings->bracket_matching);
+
+    /* Apply whitespace visibility */
+    GtkSourceSpaceDrawer *space_drawer = gtk_source_view_get_space_drawer(GTK_SOURCE_VIEW(editor_state.source_view));
+    if (settings->show_whitespace) {
+        gtk_source_space_drawer_set_types_for_locations(space_drawer,
+            GTK_SOURCE_SPACE_LOCATION_ALL,
+            GTK_SOURCE_SPACE_TYPE_SPACE | GTK_SOURCE_SPACE_TYPE_TAB | GTK_SOURCE_SPACE_TYPE_NEWLINE);
+        gtk_source_space_drawer_set_enable_matrix(space_drawer, TRUE);
+    } else {
+        gtk_source_space_drawer_set_enable_matrix(space_drawer, FALSE);
+    }
+
+    /* Apply word wrap */
+    if (settings->word_wrap) {
+        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(editor_state.source_view), GTK_WRAP_WORD);
+    } else {
+        gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(editor_state.source_view), GTK_WRAP_NONE);
+    }
+
+    /* Apply behavior settings */
+    gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(editor_state.source_view),
+                                  settings->tab_width);
+    gtk_source_view_set_indent_width(GTK_SOURCE_VIEW(editor_state.source_view),
+                                     settings->tab_width);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(GTK_SOURCE_VIEW(editor_state.source_view),
+                                                      settings->insert_spaces);
+    gtk_source_view_set_auto_indent(GTK_SOURCE_VIEW(editor_state.source_view),
+                                    settings->auto_indent);
+
+    if (settings->smart_home_end) {
+        gtk_source_view_set_smart_home_end(GTK_SOURCE_VIEW(editor_state.source_view),
+                                           GTK_SOURCE_SMART_HOME_END_BEFORE);
+    } else {
+        gtk_source_view_set_smart_home_end(GTK_SOURCE_VIEW(editor_state.source_view),
+                                           GTK_SOURCE_SMART_HOME_END_DISABLED);
+    }
+    gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
+
+    /* Apply font */
+    char font_desc[128];
+    snprintf(font_desc, sizeof(font_desc), "%s %d", settings->font_family, settings->font_size);
+    PangoFontDescription *font = pango_font_description_from_string(font_desc);
+    gtk_widget_override_font(editor_state.source_view, font);
+    pango_font_description_free(font);
 }
 
 GtkSourceBuffer *editor_text_get_buffer(void) {
