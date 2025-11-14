@@ -57,6 +57,7 @@ static GtkWidget *cursor_label = NULL;
 static GtkWidget *compile_btn = NULL;
 static GtkWidget *settings_btn = NULL;
 static char *current_file_path = NULL;
+static bool file_modified = false;
 
 /* Editor settings */
 static int editor_tab_width = 4;
@@ -114,10 +115,12 @@ static const char *default_shader =
 static gboolean animation_timer_cb(gpointer user_data);
 static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
 static void on_settings_clicked(GtkWidget *button, gpointer user_data);
+static void on_exit_clicked(GtkWidget *button, gpointer user_data);
 static void save_settings(void);
 static void load_settings(void);
 static void apply_font_size(void);
 static void apply_tab_width(void);
+static void update_window_title(void);
 
 /* Get current time in seconds */
 static double get_time(void) {
@@ -160,6 +163,31 @@ static void update_status(const char *message) {
         snprintf(markup, sizeof(markup), "<span foreground='#00FF41'>%s</span>", message);
         gtk_label_set_markup(GTK_LABEL(status_label), markup);
     }
+}
+
+/* Update window title to show modified status */
+static void update_window_title(void) {
+    if (!editor_window) return;
+
+    char title[256];
+    if (file_modified) {
+        if (current_file_path) {
+            char *basename = g_path_get_basename(current_file_path);
+            snprintf(title, sizeof(title), "🎨 gleditor - %s*", basename);
+            g_free(basename);
+        } else {
+            snprintf(title, sizeof(title), "🎨 gleditor - Untitled*");
+        }
+    } else {
+        if (current_file_path) {
+            char *basename = g_path_get_basename(current_file_path);
+            snprintf(title, sizeof(title), "🎨 gleditor - %s", basename);
+            g_free(basename);
+        } else {
+            snprintf(title, sizeof(title), "🎨 gleditor");
+        }
+    }
+    gtk_window_set_title(GTK_WINDOW(editor_window), title);
 }
 
 /* Update FPS display */
@@ -277,6 +305,12 @@ static gboolean compile_timeout_cb(gpointer user_data) {
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data) {
     (void)buffer;
     (void)user_data;
+
+    /* Mark file as modified */
+    if (!file_modified) {
+        file_modified = true;
+        update_window_title();
+    }
 
     if (!editor_auto_compile) return;
 
@@ -477,6 +511,8 @@ static void on_save_clicked(GtkWidget *button, gpointer user_data) {
         if (g_file_set_contents(filename, text, -1, &error)) {
             g_free(current_file_path);
             current_file_path = filename;
+            file_modified = false;
+            update_window_title();
             update_status("Shader saved successfully");
         } else {
             char msg[512];
@@ -514,6 +550,8 @@ static void on_load_clicked(GtkWidget *button, gpointer user_data) {
             gtk_text_buffer_set_text(GTK_TEXT_BUFFER(source_buffer), contents, -1);
             g_free(current_file_path);
             current_file_path = filename;
+            file_modified = false;
+            update_window_title();
             update_status("Shader loaded successfully");
             g_free(contents);
         } else {
@@ -592,6 +630,10 @@ static void on_reset_clicked(GtkWidget *button, gpointer user_data) {
     (void)user_data;
 
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(source_buffer), default_shader, -1);
+    g_free(current_file_path);
+    current_file_path = NULL;
+    file_modified = false;
+    update_window_title();
     update_status("Reset to default shader");
 }
 
@@ -862,6 +904,7 @@ static void on_settings_clicked(GtkWidget *button, gpointer user_data) {
         "Ctrl+N - New\n"
         "Ctrl+R / F5 - Compile\n"
         "Ctrl+I - Install to NeoWall\n"
+        "Ctrl+Q - Exit\n"
         "Ctrl++ / Ctrl+- - Zoom font\n"
         "F11 - Fullscreen"
         "</small>");
@@ -871,6 +914,63 @@ static void on_settings_clicked(GtkWidget *button, gpointer user_data) {
     gtk_widget_show_all(dialog);
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
+}
+
+/* Confirm exit with unsaved changes - shared logic */
+static bool confirm_exit(void) {
+    /* Check if file has unsaved changes */
+    if (!file_modified) {
+        return true;  /* No unsaved changes, OK to exit */
+    }
+
+    GtkWidget *dialog = gtk_message_dialog_new(
+        GTK_WINDOW(editor_window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        GTK_MESSAGE_WARNING,
+        GTK_BUTTONS_NONE,
+        "Unsaved Changes");
+
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(dialog),
+        "You have unsaved changes. Do you want to save before closing?");
+
+    gtk_dialog_add_buttons(GTK_DIALOG(dialog),
+        "_Don't Save", GTK_RESPONSE_NO,
+        "_Cancel", GTK_RESPONSE_CANCEL,
+        "_Save", GTK_RESPONSE_YES,
+        NULL);
+
+    /* Make Save button the default and suggested */
+    GtkWidget *save_button = gtk_dialog_get_widget_for_response(GTK_DIALOG(dialog), GTK_RESPONSE_YES);
+    if (save_button) {
+        GtkStyleContext *ctx = gtk_widget_get_style_context(save_button);
+        gtk_style_context_add_class(ctx, "suggested-action");
+        gtk_widget_grab_default(save_button);
+    }
+
+    int response = gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+
+    if (response == GTK_RESPONSE_YES) {
+        /* Save the file */
+        on_save_clicked(NULL, NULL);
+        /* Only exit if save was successful (file_modified will be false) */
+        return !file_modified;
+    } else if (response == GTK_RESPONSE_NO) {
+        /* Don't save, just exit */
+        return true;
+    }
+    /* If CANCEL, don't exit */
+    return false;
+}
+
+/* Exit button with confirmation */
+static void on_exit_clicked(GtkWidget *button, gpointer user_data) {
+    (void)button;
+    (void)user_data;
+
+    if (confirm_exit()) {
+        gtk_widget_destroy(editor_window);
+    }
 }
 
 /* Keyboard shortcuts handler */
@@ -908,6 +1008,12 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
     /* Ctrl+I - Install to NeoWall */
     if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_i) {
         on_install_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+Q - Exit */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_q) {
+        on_exit_clicked(NULL, NULL);
         return TRUE;
     }
 
@@ -956,6 +1062,16 @@ static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer use
     }
 
     return FALSE;
+}
+
+/* Window delete event (X button clicked) */
+static gboolean on_window_delete_event(GtkWidget *widget, GdkEvent *event, gpointer user_data) {
+    (void)widget;
+    (void)event;
+    (void)user_data;
+
+    /* Return TRUE to prevent close if user cancels */
+    return !confirm_exit();
 }
 
 /* Window destroy callback */
@@ -1031,6 +1147,7 @@ void shader_editor_show(GtkApplication *app) {
     compile_btn = gtk_button_new_with_label("⚡ Compile");
     GtkWidget *pause_btn = gtk_toggle_button_new_with_label("⏸ Pause");
     settings_btn = gtk_button_new_with_label("⚙️ Settings");
+    GtkWidget *exit_btn = gtk_button_new_with_label("🚪 Exit");
 
     /* Style install button as suggested action */
     GtkStyleContext *install_ctx = gtk_widget_get_style_context(install_btn);
@@ -1055,6 +1172,10 @@ void shader_editor_show(GtkApplication *app) {
     /* Spacer */
     GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_box_pack_start(GTK_BOX(toolbar), spacer, TRUE, TRUE, 0);
+
+    /* Exit button at the end */
+    gtk_box_pack_end(GTK_BOX(toolbar), exit_btn, FALSE, FALSE, 0);
+    gtk_box_pack_end(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL), FALSE, FALSE, SEPARATOR_SPACING);
 
     /* FPS label with matrix green and styling */
     fps_label = gtk_label_new("");
@@ -1218,6 +1339,7 @@ void shader_editor_show(GtkApplication *app) {
     gtk_box_pack_end(GTK_BOX(statusbar), cursor_label, FALSE, FALSE, 0);
 
     /* Connect signals */
+    g_signal_connect(editor_window, "delete-event", G_CALLBACK(on_window_delete_event), NULL);
     g_signal_connect(editor_window, "destroy", G_CALLBACK(on_window_destroy), NULL);
     g_signal_connect(editor_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
     g_signal_connect(new_btn, "clicked", G_CALLBACK(on_reset_clicked), NULL);
@@ -1227,6 +1349,7 @@ void shader_editor_show(GtkApplication *app) {
     g_signal_connect(compile_btn, "clicked", G_CALLBACK(on_compile_clicked), NULL);
     g_signal_connect(pause_btn, "toggled", G_CALLBACK(on_pause_toggled), NULL);
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), NULL);
+    g_signal_connect(exit_btn, "clicked", G_CALLBACK(on_exit_clicked), NULL);
     g_signal_connect(source_buffer, "changed", G_CALLBACK(on_buffer_changed), NULL);
     g_signal_connect(source_buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), NULL);
     g_signal_connect(gl_area, "realize", G_CALLBACK(on_gl_realize), NULL);
@@ -1236,6 +1359,8 @@ void shader_editor_show(GtkApplication *app) {
 
     /* Set default shader */
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(source_buffer), default_shader, -1);
+    file_modified = false;
+    update_window_title();
 
     /* Show window */
     gtk_widget_show_all(editor_window);
