@@ -186,6 +186,33 @@ typedef struct {
 } SettingsCallbackData;
 
 /* Font size changed */
+static void on_font_changed(GtkFontButton *font_button, gpointer data) {
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    const char *font_name = gtk_font_chooser_get_font(GTK_FONT_CHOOSER(font_button));
+
+    if (font_name) {
+        /* Parse font name to get family and size */
+        PangoFontDescription *font_desc = pango_font_description_from_string(font_name);
+        const char *family = pango_font_description_get_family(font_desc);
+        int size = pango_font_description_get_size(font_desc) / PANGO_SCALE;
+
+        if (family) {
+            strncpy(cb_data->settings->font_family, family, sizeof(cb_data->settings->font_family) - 1);
+            cb_data->settings->font_family[sizeof(cb_data->settings->font_family) - 1] = '\0';
+        }
+        if (size > 0) {
+            cb_data->settings->font_size = size;
+        }
+
+        pango_font_description_free(font_desc);
+
+        editor_settings_save(cb_data->settings);
+        if (cb_data->on_change) {
+            cb_data->on_change(cb_data->settings, cb_data->user_data);
+        }
+    }
+}
+
 static void on_font_size_changed(GtkSpinButton *spin, gpointer data) {
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->font_size = gtk_spin_button_get_value_as_int(spin);
@@ -301,13 +328,7 @@ static void on_reset_speed_clicked(GtkButton *button, gpointer data) {
     gtk_spin_button_set_value(spin, 1.0);
 }
 
-static void on_indent_guides_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
-    (void)pspec;
-    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
-    cb_data->settings->show_indent_guides = gtk_switch_get_active(sw);
-    editor_settings_save(cb_data->settings);
-    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
-}
+/* Removed - show_indent_guides was redundant with background_pattern */
 
 static void on_background_pattern_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
     (void)pspec;
@@ -339,6 +360,36 @@ static void on_auto_completion_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointe
     cb_data->settings->auto_completion = gtk_switch_get_active(sw);
     editor_settings_save(cb_data->settings);
     if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_insert_spaces_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->insert_spaces = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
+}
+
+static void on_auto_indent_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->auto_indent = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
+}
+
+static void on_smart_home_end_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->smart_home_end = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
 }
 
 /* Show settings dialog */
@@ -390,16 +441,20 @@ void editor_settings_show_dialog(GtkWindow *parent,
 
     int row = 0;
 
-    /* Font size */
-    GtkWidget *font_label = gtk_label_new("Font Size:");
-    gtk_widget_set_halign(font_label, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(appearance_grid), font_label, 0, row, 1, 1);
+    /* Font selector */
+    GtkWidget *font_selector_label = gtk_label_new("Font:");
+    gtk_widget_set_halign(font_selector_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), font_selector_label, 0, row, 1, 1);
 
-    GtkWidget *font_spin = gtk_spin_button_new_with_range(8, 24, 1);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(font_spin), settings->font_size);
-    gtk_widget_set_tooltip_text(font_spin, "Editor font size in points (8-24)");
-    g_signal_connect(font_spin, "value-changed", G_CALLBACK(on_font_size_changed), &cb_data);
-    gtk_grid_attach(GTK_GRID(appearance_grid), font_spin, 1, row, 1, 1);
+    char current_font[128];
+    snprintf(current_font, sizeof(current_font), "%s %d", settings->font_family, settings->font_size);
+    GtkWidget *font_button = gtk_font_button_new_with_font(current_font);
+    gtk_font_button_set_use_font(GTK_FONT_BUTTON(font_button), FALSE);
+    gtk_font_button_set_use_size(GTK_FONT_BUTTON(font_button), TRUE);
+    gtk_font_chooser_set_preview_text(GTK_FONT_CHOOSER(font_button), "vec3 color = vec3(1.0, 0.5, 0.0);");
+    gtk_widget_set_tooltip_text(font_button, "Select editor font family and size");
+    g_signal_connect(font_button, "font-set", G_CALLBACK(on_font_changed), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), font_button, 1, row, 1, 1);
     row++;
 
     /* Theme */
@@ -513,18 +568,6 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_attach(GTK_GRID(appearance_grid), cursor_combo, 1, row, 1, 1);
     row++;
 
-    /* Show indent guides */
-    GtkWidget *indent_guides_label = gtk_label_new("Show Indent Guides:");
-    gtk_widget_set_halign(indent_guides_label, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(appearance_grid), indent_guides_label, 0, row, 1, 1);
-
-    GtkWidget *indent_guides_switch = gtk_switch_new();
-    gtk_switch_set_active(GTK_SWITCH(indent_guides_switch), settings->show_indent_guides);
-    gtk_widget_set_tooltip_text(indent_guides_switch, "Display vertical indent guide lines");
-    g_signal_connect(indent_guides_switch, "notify::active", G_CALLBACK(on_indent_guides_toggled), &cb_data);
-    gtk_grid_attach(GTK_GRID(appearance_grid), indent_guides_switch, 1, row, 1, 1);
-    row++;
-
     /* Background pattern */
     GtkWidget *bg_pattern_label = gtk_label_new("Background Pattern:");
     gtk_widget_set_halign(bg_pattern_label, GTK_ALIGN_END);
@@ -532,7 +575,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
 
     GtkWidget *bg_pattern_switch = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(bg_pattern_switch), settings->background_pattern);
-    gtk_widget_set_tooltip_text(bg_pattern_switch, "Show subtle grid pattern in background");
+    gtk_widget_set_tooltip_text(bg_pattern_switch, "Show subtle grid pattern and indent guides in editor background");
     g_signal_connect(bg_pattern_switch, "notify::active", G_CALLBACK(on_background_pattern_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(appearance_grid), bg_pattern_switch, 1, row, 1, 1);
     row++;
@@ -591,6 +634,42 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_tooltip_text(tab_spin, "Number of spaces per tab (2-8)");
     g_signal_connect(tab_spin, "value-changed", G_CALLBACK(on_tab_width_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(behavior_grid), tab_spin, 1, row, 1, 1);
+    row++;
+
+    /* Insert Spaces Instead of Tabs */
+    GtkWidget *insert_spaces_label = gtk_label_new("Insert Spaces:");
+    gtk_widget_set_halign(insert_spaces_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(behavior_grid), insert_spaces_label, 0, row, 1, 1);
+
+    GtkWidget *insert_spaces_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(insert_spaces_switch), settings->insert_spaces);
+    gtk_widget_set_tooltip_text(insert_spaces_switch, "Insert spaces instead of tabs when pressing Tab key");
+    g_signal_connect(insert_spaces_switch, "notify::active", G_CALLBACK(on_insert_spaces_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(behavior_grid), insert_spaces_switch, 1, row, 1, 1);
+    row++;
+
+    /* Auto Indent */
+    GtkWidget *auto_indent_label = gtk_label_new("Auto Indent:");
+    gtk_widget_set_halign(auto_indent_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(behavior_grid), auto_indent_label, 0, row, 1, 1);
+
+    GtkWidget *auto_indent_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(auto_indent_switch), settings->auto_indent);
+    gtk_widget_set_tooltip_text(auto_indent_switch, "Automatically indent new lines to match previous line");
+    g_signal_connect(auto_indent_switch, "notify::active", G_CALLBACK(on_auto_indent_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(behavior_grid), auto_indent_switch, 1, row, 1, 1);
+    row++;
+
+    /* Smart Home/End */
+    GtkWidget *smart_home_label = gtk_label_new("Smart Home/End:");
+    gtk_widget_set_halign(smart_home_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(behavior_grid), smart_home_label, 0, row, 1, 1);
+
+    GtkWidget *smart_home_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(smart_home_switch), settings->smart_home_end);
+    gtk_widget_set_tooltip_text(smart_home_switch, "Home key moves to first non-whitespace character before line start");
+    g_signal_connect(smart_home_switch, "notify::active", G_CALLBACK(on_smart_home_end_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(behavior_grid), smart_home_switch, 1, row, 1, 1);
     row++;
 
     /* Auto-compile */

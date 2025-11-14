@@ -139,11 +139,8 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     gtk_source_view_set_show_line_marks(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
     gtk_source_view_set_indent_on_tab(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
 
-    if (show_indent_guides) {
-        gtk_source_view_set_background_pattern(GTK_SOURCE_VIEW(editor_state.source_view),
-                                               GTK_SOURCE_BACKGROUND_PATTERN_TYPE_GRID);
-    }
-
+    /* Apply background pattern - only controlled by background_pattern setting */
+    /* Note: show_indent_guides was redundant - both used the same GRID pattern */
     if (background_pattern) {
         gtk_source_view_set_background_pattern(GTK_SOURCE_VIEW(editor_state.source_view),
                                                GTK_SOURCE_BACKGROUND_PATTERN_TYPE_GRID);
@@ -156,11 +153,9 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(editor_state.source_view),
                                      scroll_past_end ? 500 : 8);
 
-    /* Mark occurrences */
+    /* Note: Mark occurrences would require custom implementation with GtkSourceSearchContext */
+    /* For now, we just ensure syntax highlighting is enabled */
     gtk_source_buffer_set_highlight_syntax(editor_state.source_buffer, TRUE);
-    if (mark_occurrences) {
-        gtk_source_buffer_set_implicit_trailing_newline(editor_state.source_buffer, TRUE);
-    }
 
     /* Set cursor style - GtkTextView doesn't support cursor style changes directly */
     /* Block cursor is achieved through overwrite mode */
@@ -290,8 +285,9 @@ void editor_text_apply_all_settings(const EditorSettings *settings) {
     }
     gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
 
-    /* Apply advanced IDE features */
-    if (settings->show_indent_guides || settings->background_pattern) {
+    /* Apply background pattern - only controlled by background_pattern setting */
+    /* Note: show_indent_guides was redundant - both used the same GRID pattern */
+    if (settings->background_pattern) {
         gtk_source_view_set_background_pattern(GTK_SOURCE_VIEW(editor_state.source_view),
                                                GTK_SOURCE_BACKGROUND_PATTERN_TYPE_GRID);
     } else {
@@ -313,6 +309,23 @@ void editor_text_apply_all_settings(const EditorSettings *settings) {
         gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), TRUE);
     } else {
         gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), FALSE);
+    }
+
+    /* Apply auto-completion */
+    GtkSourceCompletion *completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor_state.source_view));
+    if (completion) {
+        /* Enable/disable auto-completion by showing/hiding the popup */
+        g_object_set(completion,
+                     "show-headers", FALSE,
+                     "show-icons", TRUE,
+                     NULL);
+
+        /* Block or unblock interactive completion */
+        if (settings->auto_completion) {
+            gtk_source_completion_unblock_interactive(completion);
+        } else {
+            gtk_source_completion_block_interactive(completion);
+        }
     }
 
     /* Apply font */
