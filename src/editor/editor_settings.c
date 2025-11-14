@@ -295,6 +295,12 @@ static void on_cursor_style_changed(GtkComboBox *combo, gpointer data) {
     if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
 }
 
+static void on_reset_speed_clicked(GtkButton *button, gpointer data) {
+    (void)button;
+    GtkSpinButton *spin = GTK_SPIN_BUTTON(data);
+    gtk_spin_button_set_value(spin, 1.0);
+}
+
 static void on_indent_guides_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
     (void)pspec;
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
@@ -615,12 +621,20 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_halign(speed_label, GTK_ALIGN_END);
     gtk_grid_attach(GTK_GRID(preview_grid), speed_label, 0, row, 1, 1);
 
+    GtkWidget *speed_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     GtkWidget *speed_spin = gtk_spin_button_new_with_range(0.1, 5.0, 0.1);
     gtk_spin_button_set_digits(GTK_SPIN_BUTTON(speed_spin), 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(speed_spin), settings->shader_speed);
     gtk_widget_set_tooltip_text(speed_spin, "Animation speed multiplier (0.1-5.0)\n1.0 = normal, 2.0 = double, 0.5 = half");
     g_signal_connect(speed_spin, "value-changed", G_CALLBACK(on_shader_speed_changed), &cb_data);
-    gtk_grid_attach(GTK_GRID(preview_grid), speed_spin, 1, row, 1, 1);
+    gtk_box_pack_start(GTK_BOX(speed_box), speed_spin, FALSE, FALSE, 0);
+
+    GtkWidget *reset_speed_btn = gtk_button_new_with_label("Reset");
+    gtk_widget_set_tooltip_text(reset_speed_btn, "Reset to 1.0x (normal speed)");
+    g_signal_connect(reset_speed_btn, "clicked", G_CALLBACK(on_reset_speed_clicked), speed_spin);
+    gtk_box_pack_start(GTK_BOX(speed_box), reset_speed_btn, FALSE, FALSE, 0);
+
+    gtk_grid_attach(GTK_GRID(preview_grid), speed_box, 1, row, 1, 1);
     row++;
 
     gtk_widget_show_all(dialog);
