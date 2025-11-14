@@ -524,8 +524,8 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.paned_widget, "size-allocate",
                      G_CALLBACK(on_paned_size_allocate), NULL);
 
-    /* Create text editor */
-    window_state.text_widget = editor_text_create(NULL);
+    /* Create text editor with loaded settings */
+    window_state.text_widget = editor_text_create(&editor_settings);
     /* Note: callbacks connected after initial content is loaded */
     gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
 

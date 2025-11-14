@@ -29,10 +29,10 @@ typedef void (*editor_cursor_move_callback_t)(int line, int column, gpointer use
 /**
  * Create the text editor widget
  * 
- * @param config Initial configuration (NULL for defaults)
+ * @param settings Initial settings (NULL for defaults)
  * @return The text editor widget (GtkScrolledWindow containing GtkSourceView)
  */
-GtkWidget *editor_text_create(const editor_text_config_t *config);
+GtkWidget *editor_text_create(const EditorSettings *settings);
 
 /**
  * Apply all settings from EditorSettings structure

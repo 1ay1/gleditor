@@ -31,7 +31,7 @@ static struct {
     .scrolled_window = NULL,
     .config = {
         .tab_width = 4,
-        .font_size = 12,
+        .font_size = 11,
         .auto_compile = true,
         .show_line_numbers = true,
         .highlight_current_line = true,
@@ -79,16 +79,14 @@ static void on_cursor_moved(GtkTextBuffer *buffer, GParamSpec *pspec, gpointer u
 
 /* Public API */
 
-GtkWidget *editor_text_create(const editor_text_config_t *config) {
+GtkWidget *editor_text_create(const EditorSettings *settings) {
     if (editor_state.initialized) {
         g_warning("editor_text_create: Editor already initialized");
         return editor_state.scrolled_window;
     }
 
-    /* Apply config if provided */
-    if (config) {
-        editor_state.config = *config;
-    }
+    /* Use defaults if no settings provided */
+    bool use_settings = (settings != NULL);
 
     /* Create source buffer with GLSL language */
     GtkSourceLanguageManager *lang_manager = gtk_source_language_manager_get_default();
@@ -99,9 +97,10 @@ GtkWidget *editor_text_create(const editor_text_config_t *config) {
     /* Enable syntax highlighting */
     gtk_source_buffer_set_highlight_syntax(editor_state.source_buffer, TRUE);
 
-    /* Set up style scheme (dark theme) */
+    /* Set up style scheme */
     GtkSourceStyleSchemeManager *scheme_manager = gtk_source_style_scheme_manager_get_default();
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, "oblivion");
+    const char *theme_name = use_settings ? settings->theme : "oblivion";
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, theme_name);
     if (scheme) {
         gtk_source_buffer_set_style_scheme(editor_state.source_buffer, scheme);
     }
@@ -109,21 +108,32 @@ GtkWidget *editor_text_create(const editor_text_config_t *config) {
     /* Create source view */
     editor_state.source_view = gtk_source_view_new_with_buffer(editor_state.source_buffer);
 
-    /* Configure source view */
-    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(editor_state.source_view),
-                                          editor_state.config.show_line_numbers);
-    gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(editor_state.source_view),
-                                               editor_state.config.highlight_current_line);
-    gtk_source_view_set_auto_indent(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
-    gtk_source_view_set_indent_width(GTK_SOURCE_VIEW(editor_state.source_view),
-                                     editor_state.config.tab_width);
-    gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(editor_state.source_view),
-                                  editor_state.config.tab_width);
-    gtk_source_view_set_insert_spaces_instead_of_tabs(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
+    /* Configure source view with settings or defaults */
+    int tab_width = use_settings ? settings->tab_width : 4;
+    int font_size = use_settings ? settings->font_size : 11;
+    bool show_line_numbers = use_settings ? settings->show_line_numbers : true;
+    bool highlight_current_line = use_settings ? settings->highlight_current_line : true;
+    bool show_right_margin = use_settings ? settings->show_right_margin : true;
+    bool bracket_matching = use_settings ? settings->bracket_matching : true;
+    bool auto_indent = use_settings ? settings->auto_indent : true;
+    bool insert_spaces = use_settings ? settings->insert_spaces : true;
+
+    gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(editor_state.source_view), show_line_numbers);
+    gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(editor_state.source_view), highlight_current_line);
+    gtk_source_view_set_auto_indent(GTK_SOURCE_VIEW(editor_state.source_view), auto_indent);
+    gtk_source_view_set_indent_width(GTK_SOURCE_VIEW(editor_state.source_view), tab_width);
+    gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(editor_state.source_view), tab_width);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(GTK_SOURCE_VIEW(editor_state.source_view), insert_spaces);
+    gtk_source_view_set_show_right_margin(GTK_SOURCE_VIEW(editor_state.source_view), show_right_margin);
+    gtk_source_view_set_right_margin_position(GTK_SOURCE_VIEW(editor_state.source_view), 80);
+    gtk_source_buffer_set_highlight_matching_brackets(editor_state.source_buffer, bracket_matching);
+    gtk_source_view_set_smart_home_end(GTK_SOURCE_VIEW(editor_state.source_view), GTK_SOURCE_SMART_HOME_END_BEFORE);
+    gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
 
     /* Set monospace font */
-    char font_desc[64];
-    snprintf(font_desc, sizeof(font_desc), "Monospace %d", editor_state.config.font_size);
+    char font_desc[128];
+    const char *font_family = use_settings ? settings->font_family : "Monospace";
+    snprintf(font_desc, sizeof(font_desc), "%s %d", font_family, font_size);
     PangoFontDescription *font = pango_font_description_from_string(font_desc);
     gtk_widget_override_font(editor_state.source_view, font);
     pango_font_description_free(font);
