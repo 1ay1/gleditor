@@ -13,13 +13,13 @@ static struct {
     GtkWidget *compile_button;
     GtkWidget *install_button;
     GtkWidget *split_button;
-    GtkWidget *editor_button;
-    GtkWidget *preview_button;
+    GtkWidget *view_both_button;
+    GtkWidget *view_editor_button;
+    GtkWidget *view_preview_button;
     editor_toolbar_callbacks_t callbacks;
     bool is_paused;
     bool is_horizontal;
-    bool editor_visible;
-    bool preview_visible;
+    ViewMode current_view_mode;
     bool initialized;
 } toolbar_state = {
     .toolbar = NULL,
@@ -27,13 +27,13 @@ static struct {
     .compile_button = NULL,
     .install_button = NULL,
     .split_button = NULL,
-    .editor_button = NULL,
-    .preview_button = NULL,
+    .view_both_button = NULL,
+    .view_editor_button = NULL,
+    .view_preview_button = NULL,
     .callbacks = {0},
     .is_paused = false,
     .is_horizontal = true,
-    .editor_visible = true,
-    .preview_visible = true,
+    .current_view_mode = VIEW_MODE_BOTH,
     .initialized = false
 };
 
@@ -110,27 +110,28 @@ static void on_exit_clicked(GtkWidget *widget, gpointer user_data) {
     }
 }
 
-static void on_toggle_split_clicked(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
+static void on_toggle_split_clicked(GtkToggleButton *button, gpointer user_data) {
     (void)user_data;
+
+    /* Update state based on button */
+    toolbar_state.is_horizontal = !gtk_toggle_button_get_active(button);
+
     if (toolbar_state.callbacks.on_toggle_split) {
         toolbar_state.callbacks.on_toggle_split(toolbar_state.callbacks.user_data);
     }
 }
 
-static void on_toggle_editor_clicked(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
-    (void)user_data;
-    if (toolbar_state.callbacks.on_toggle_editor) {
-        toolbar_state.callbacks.on_toggle_editor(toolbar_state.callbacks.user_data);
+static void on_view_mode_toggled(GtkToggleButton *button, gpointer user_data) {
+    /* Only process if button is being activated (not deactivated) */
+    if (!gtk_toggle_button_get_active(button)) {
+        return;
     }
-}
 
-static void on_toggle_preview_clicked(GtkWidget *widget, gpointer user_data) {
-    (void)widget;
-    (void)user_data;
-    if (toolbar_state.callbacks.on_toggle_preview) {
-        toolbar_state.callbacks.on_toggle_preview(toolbar_state.callbacks.user_data);
+    ViewMode mode = GPOINTER_TO_INT(user_data);
+    toolbar_state.current_view_mode = mode;
+
+    if (toolbar_state.callbacks.on_view_mode_changed) {
+        toolbar_state.callbacks.on_view_mode_changed(mode, toolbar_state.callbacks.user_data);
     }
 }
 
@@ -239,20 +240,39 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
 
     /* View controls group */
-    toolbar_state.split_button = create_button("view-split-left-right", "⇆");
-    gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle Split Orientation (Horizontal/Vertical)");
-    g_signal_connect(toolbar_state.split_button, "clicked", G_CALLBACK(on_toggle_split_clicked), NULL);
+    toolbar_state.split_button = create_toggle_button("view-split-left-right", NULL);
+    gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle Split Orientation");
+    g_signal_connect(toolbar_state.split_button, "toggled", G_CALLBACK(on_toggle_split_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.split_button, FALSE, FALSE, 0);
 
-    toolbar_state.editor_button = create_button("text-x-generic", "📝");
-    gtk_widget_set_tooltip_text(toolbar_state.editor_button, "Toggle Editor Visibility");
-    g_signal_connect(toolbar_state.editor_button, "clicked", G_CALLBACK(on_toggle_editor_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.editor_button, FALSE, FALSE, 0);
+    /* View mode toggle button group (radio-style) */
+    GtkWidget *view_group_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_style_context_add_class(gtk_widget_get_style_context(view_group_box), "linked");
 
-    toolbar_state.preview_button = create_button("video-display", "🎬");
-    gtk_widget_set_tooltip_text(toolbar_state.preview_button, "Toggle Preview Visibility");
-    g_signal_connect(toolbar_state.preview_button, "clicked", G_CALLBACK(on_toggle_preview_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.preview_button, FALSE, FALSE, 0);
+    toolbar_state.view_both_button = gtk_radio_button_new_with_label(NULL, "Both");
+    gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_both_button), FALSE);
+    gtk_widget_set_tooltip_text(toolbar_state.view_both_button, "Show Both Editor and Preview");
+    g_signal_connect(toolbar_state.view_both_button, "toggled",
+                     G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_BOTH));
+    gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_both_button, FALSE, FALSE, 0);
+
+    toolbar_state.view_editor_button = gtk_radio_button_new_with_label_from_widget(
+        GTK_RADIO_BUTTON(toolbar_state.view_both_button), "Editor");
+    gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_editor_button), FALSE);
+    gtk_widget_set_tooltip_text(toolbar_state.view_editor_button, "Show Editor Only");
+    g_signal_connect(toolbar_state.view_editor_button, "toggled",
+                     G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_EDITOR_ONLY));
+    gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_editor_button, FALSE, FALSE, 0);
+
+    toolbar_state.view_preview_button = gtk_radio_button_new_with_label_from_widget(
+        GTK_RADIO_BUTTON(toolbar_state.view_both_button), "Preview");
+    gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_preview_button), FALSE);
+    gtk_widget_set_tooltip_text(toolbar_state.view_preview_button, "Show Preview Only");
+    g_signal_connect(toolbar_state.view_preview_button, "toggled",
+                     G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_PREVIEW_ONLY));
+    gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_preview_button, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), view_group_box, FALSE, FALSE, 0);
 
     /* Separator */
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
@@ -324,7 +344,7 @@ GtkWidget *editor_toolbar_get_pause_button(void) {
     return toolbar_state.pause_button;
 }
 
-void editor_toolbar_set_split_orientation(bool is_horizontal) {
+void editor_toolbar_set_split_horizontal(bool is_horizontal) {
     if (!toolbar_state.split_button) {
         return;
     }
@@ -342,36 +362,50 @@ void editor_toolbar_set_split_orientation(bool is_horizontal) {
     }
 
     g_list_free(children);
+
+    /* Update toggle button state */
+    g_signal_handlers_block_by_func(toolbar_state.split_button,
+                                    G_CALLBACK(on_toggle_split_clicked), NULL);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toolbar_state.split_button), !is_horizontal);
+    g_signal_handlers_unblock_by_func(toolbar_state.split_button,
+                                      G_CALLBACK(on_toggle_split_clicked), NULL);
 }
 
-void editor_toolbar_set_editor_visible(bool visible) {
-    if (!toolbar_state.editor_button) {
-        return;
+void editor_toolbar_set_view_mode(ViewMode mode) {
+    toolbar_state.current_view_mode = mode;
+
+    /* Block signals to prevent recursion */
+    g_signal_handlers_block_by_func(toolbar_state.view_both_button,
+                                    G_CALLBACK(on_view_mode_toggled), NULL);
+    g_signal_handlers_block_by_func(toolbar_state.view_editor_button,
+                                    G_CALLBACK(on_view_mode_toggled), NULL);
+    g_signal_handlers_block_by_func(toolbar_state.view_preview_button,
+                                    G_CALLBACK(on_view_mode_toggled), NULL);
+
+    /* Activate the appropriate button */
+    switch (mode) {
+        case VIEW_MODE_BOTH:
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toolbar_state.view_both_button), TRUE);
+            break;
+        case VIEW_MODE_EDITOR_ONLY:
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toolbar_state.view_editor_button), TRUE);
+            break;
+        case VIEW_MODE_PREVIEW_ONLY:
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toolbar_state.view_preview_button), TRUE);
+            break;
     }
 
-    toolbar_state.editor_visible = visible;
-
-    /* Update button appearance to show state */
-    if (visible) {
-        gtk_widget_set_opacity(toolbar_state.editor_button, 1.0);
-    } else {
-        gtk_widget_set_opacity(toolbar_state.editor_button, 0.4);
-    }
+    /* Unblock signals */
+    g_signal_handlers_unblock_by_func(toolbar_state.view_both_button,
+                                      G_CALLBACK(on_view_mode_toggled), NULL);
+    g_signal_handlers_unblock_by_func(toolbar_state.view_editor_button,
+                                      G_CALLBACK(on_view_mode_toggled), NULL);
+    g_signal_handlers_unblock_by_func(toolbar_state.view_preview_button,
+                                      G_CALLBACK(on_view_mode_toggled), NULL);
 }
 
-void editor_toolbar_set_preview_visible(bool visible) {
-    if (!toolbar_state.preview_button) {
-        return;
-    }
-
-    toolbar_state.preview_visible = visible;
-
-    /* Update button appearance to show state */
-    if (visible) {
-        gtk_widget_set_opacity(toolbar_state.preview_button, 1.0);
-    } else {
-        gtk_widget_set_opacity(toolbar_state.preview_button, 0.4);
-    }
+ViewMode editor_toolbar_get_view_mode(void) {
+    return toolbar_state.current_view_mode;
 }
 
 void editor_toolbar_destroy(void) {
@@ -385,12 +419,12 @@ void editor_toolbar_destroy(void) {
     toolbar_state.compile_button = NULL;
     toolbar_state.install_button = NULL;
     toolbar_state.split_button = NULL;
-    toolbar_state.editor_button = NULL;
-    toolbar_state.preview_button = NULL;
+    toolbar_state.view_both_button = NULL;
+    toolbar_state.view_editor_button = NULL;
+    toolbar_state.view_preview_button = NULL;
     memset(&toolbar_state.callbacks, 0, sizeof(toolbar_state.callbacks));
     toolbar_state.is_paused = false;
     toolbar_state.is_horizontal = true;
-    toolbar_state.editor_visible = true;
-    toolbar_state.preview_visible = true;
+    toolbar_state.current_view_mode = VIEW_MODE_BOTH;
     toolbar_state.initialized = false;
 }

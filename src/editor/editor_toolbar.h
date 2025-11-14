@@ -8,8 +8,16 @@
 #include <gtk/gtk.h>
 #include <stdbool.h>
 
+/* View mode options */
+typedef enum {
+    VIEW_MODE_BOTH = 0,
+    VIEW_MODE_EDITOR_ONLY = 1,
+    VIEW_MODE_PREVIEW_ONLY = 2
+} ViewMode;
+
 /* Toolbar button callback signatures */
 typedef void (*editor_toolbar_callback_t)(gpointer user_data);
+typedef void (*editor_toolbar_view_callback_t)(ViewMode mode, gpointer user_data);
 
 /**
  * Toolbar button callbacks structure
@@ -25,8 +33,7 @@ typedef struct {
     editor_toolbar_callback_t on_settings;
     editor_toolbar_callback_t on_exit;
     editor_toolbar_callback_t on_toggle_split;
-    editor_toolbar_callback_t on_toggle_editor;
-    editor_toolbar_callback_t on_toggle_preview;
+    editor_toolbar_view_callback_t on_view_mode_changed;
     gpointer user_data;
 } editor_toolbar_callbacks_t;
 
@@ -85,21 +92,21 @@ GtkWidget *editor_toolbar_get_pause_button(void);
  * 
  * @param is_horizontal true for horizontal, false for vertical
  */
-void editor_toolbar_set_split_orientation(bool is_horizontal);
+void editor_toolbar_set_split_horizontal(bool is_horizontal);
 
 /**
- * Update editor visibility button state
+ * Set the active view mode button
  * 
- * @param visible true if editor is visible
+ * @param mode The view mode to activate
  */
-void editor_toolbar_set_editor_visible(bool visible);
+void editor_toolbar_set_view_mode(ViewMode mode);
 
 /**
- * Update preview visibility button state
+ * Get the current view mode
  * 
- * @param visible true if preview is visible
+ * @return The active view mode
  */
-void editor_toolbar_set_preview_visible(bool visible);
+ViewMode editor_toolbar_get_view_mode(void);
 
 /**
  * Destroy the toolbar and free resources

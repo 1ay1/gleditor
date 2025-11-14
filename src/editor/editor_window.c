@@ -257,45 +257,33 @@ static void on_toggle_split_clicked(gpointer user_data) {
     on_settings_changed(&editor_settings, NULL);
 
     /* Update toolbar button icon */
-    editor_toolbar_set_split_orientation(editor_settings.split_orientation == SPLIT_HORIZONTAL);
+    editor_toolbar_set_split_horizontal(editor_settings.split_orientation == SPLIT_HORIZONTAL);
 }
 
-static void on_toggle_editor_clicked(gpointer user_data) {
+static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
     (void)user_data;
 
-    if (!window_state.text_widget) return;
+    if (!window_state.text_widget || !window_state.preview_widget) return;
 
-    bool is_visible = gtk_widget_get_visible(window_state.text_widget);
+    switch (mode) {
+        case VIEW_MODE_BOTH:
+            gtk_widget_show(window_state.text_widget);
+            gtk_widget_show(window_state.preview_widget);
+            editor_statusbar_set_message("Showing both editor and preview");
+            break;
 
-    /* Don't hide if preview is already hidden */
-    if (is_visible && !gtk_widget_get_visible(window_state.preview_widget)) {
-        editor_statusbar_set_message("Cannot hide both editor and preview");
-        return;
+        case VIEW_MODE_EDITOR_ONLY:
+            gtk_widget_show(window_state.text_widget);
+            gtk_widget_hide(window_state.preview_widget);
+            editor_statusbar_set_message("Editor only mode");
+            break;
+
+        case VIEW_MODE_PREVIEW_ONLY:
+            gtk_widget_hide(window_state.text_widget);
+            gtk_widget_show(window_state.preview_widget);
+            editor_statusbar_set_message("Preview only mode");
+            break;
     }
-
-    gtk_widget_set_visible(window_state.text_widget, !is_visible);
-    editor_toolbar_set_editor_visible(!is_visible);
-
-    editor_statusbar_set_message(is_visible ? "Editor hidden" : "Editor shown");
-}
-
-static void on_toggle_preview_clicked(gpointer user_data) {
-    (void)user_data;
-
-    if (!window_state.preview_widget) return;
-
-    bool is_visible = gtk_widget_get_visible(window_state.preview_widget);
-
-    /* Don't hide if editor is already hidden */
-    if (is_visible && !gtk_widget_get_visible(window_state.text_widget)) {
-        editor_statusbar_set_message("Cannot hide both editor and preview");
-        return;
-    }
-
-    gtk_widget_set_visible(window_state.preview_widget, !is_visible);
-    editor_toolbar_set_preview_visible(!is_visible);
-
-    editor_statusbar_set_message(is_visible ? "Preview hidden" : "Preview shown");
 }
 
 static void on_settings_changed(EditorSettings *settings, gpointer user_data) {
@@ -520,8 +508,7 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
         .on_settings = on_settings_clicked,
         .on_exit = on_exit_clicked,
         .on_toggle_split = on_toggle_split_clicked,
-        .on_toggle_editor = on_toggle_editor_clicked,
-        .on_toggle_preview = on_toggle_preview_clicked,
+        .on_view_mode_changed = on_view_mode_changed,
         .user_data = NULL
     };
     window_state.toolbar_widget = editor_toolbar_create(&toolbar_callbacks);
@@ -597,9 +584,8 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     editor_toolbar_set_compile_visible(!editor_settings.auto_compile);
 
     /* Initialize toolbar view button states */
-    editor_toolbar_set_split_orientation(editor_settings.split_orientation == SPLIT_HORIZONTAL);
-    editor_toolbar_set_editor_visible(true);
-    editor_toolbar_set_preview_visible(true);
+    editor_toolbar_set_split_horizontal(editor_settings.split_orientation == SPLIT_HORIZONTAL);
+    editor_toolbar_set_view_mode(VIEW_MODE_BOTH);
 
     /* Log initial settings state */
     g_message("Settings loaded: auto_compile=%s, compile_button=%s",
