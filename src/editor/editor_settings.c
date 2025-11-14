@@ -374,11 +374,16 @@ void editor_settings_show_dialog(GtkWindow *parent,
     GtkWidget *appearance_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(appearance_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(appearance_scroll), 400);
+
+    GtkWidget *appearance_viewport = gtk_viewport_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(appearance_scroll), appearance_viewport);
+
     GtkWidget *appearance_grid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(appearance_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(appearance_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(appearance_grid), 12);
-    gtk_container_add(GTK_CONTAINER(appearance_scroll), appearance_grid);
+    gtk_container_add(GTK_CONTAINER(appearance_viewport), appearance_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), appearance_scroll, gtk_label_new("🎨 Appearance"));
 
     int row = 0;
@@ -558,11 +563,16 @@ void editor_settings_show_dialog(GtkWindow *parent,
     GtkWidget *behavior_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(behavior_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(behavior_scroll), 400);
+
+    GtkWidget *behavior_viewport = gtk_viewport_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(behavior_scroll), behavior_viewport);
+
     GtkWidget *behavior_grid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(behavior_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(behavior_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(behavior_grid), 12);
-    gtk_container_add(GTK_CONTAINER(behavior_scroll), behavior_grid);
+    gtk_container_add(GTK_CONTAINER(behavior_viewport), behavior_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), behavior_scroll, gtk_label_new("⚙️ Behavior"));
 
     row = 0;
@@ -607,11 +617,16 @@ void editor_settings_show_dialog(GtkWindow *parent,
     GtkWidget *preview_scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(preview_scroll),
                                    GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_min_content_height(GTK_SCROLLED_WINDOW(preview_scroll), 400);
+
+    GtkWidget *preview_viewport = gtk_viewport_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(preview_scroll), preview_viewport);
+
     GtkWidget *preview_grid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(preview_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(preview_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(preview_grid), 12);
-    gtk_container_add(GTK_CONTAINER(preview_scroll), preview_grid);
+    gtk_container_add(GTK_CONTAINER(preview_viewport), preview_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), preview_scroll, gtk_label_new("🎬 Preview"));
 
     row = 0;
