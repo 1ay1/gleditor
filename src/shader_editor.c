@@ -55,11 +55,14 @@ static GtkWidget *fps_label = NULL;
 static GtkWidget *source_view = NULL;
 static GtkWidget *cursor_label = NULL;
 static GtkWidget *compile_btn = NULL;
+static GtkWidget *settings_btn = NULL;
 static char *current_file_path = NULL;
 
 /* Editor settings */
 static int editor_tab_width = 4;
+static int editor_font_size = 12;
 static bool editor_auto_compile = true;
+static bool editor_show_minimap = true;
 static int preview_fps = 60;
 
 /* Shader rendering settings */
@@ -106,6 +109,8 @@ static const char *default_shader =
 
 /* Forward declarations */
 static gboolean animation_timer_cb(gpointer user_data);
+static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
+static void on_settings_clicked(GtkWidget *button, gpointer user_data);
 
 /* Get current time in seconds */
 static double get_time(void) {
@@ -614,6 +619,241 @@ static gboolean on_preview_motion(GtkWidget *widget, GdkEventMotion *event, gpoi
     return FALSE;
 }
 
+/* Apply settings callback */
+static void on_apply_settings(GtkWidget *widget, gpointer data) {
+    (void)widget;
+    GtkWidget **widgets = (GtkWidget **)data;
+    GtkSpinButton *font_spin = GTK_SPIN_BUTTON(widgets[0]);
+    GtkSpinButton *tab_spin = GTK_SPIN_BUTTON(widgets[1]);
+    GtkSwitch *auto_switch = GTK_SWITCH(widgets[2]);
+    GtkSpinButton *fps_spin = GTK_SPIN_BUTTON(widgets[3]);
+
+    editor_font_size = gtk_spin_button_get_value_as_int(font_spin);
+    editor_tab_width = gtk_spin_button_get_value_as_int(tab_spin);
+    editor_auto_compile = gtk_switch_get_active(auto_switch);
+    preview_fps = gtk_spin_button_get_value_as_int(fps_spin);
+
+    /* Apply font size */
+    GtkCssProvider *font_provider = gtk_css_provider_new();
+    char font_css[256];
+    snprintf(font_css, sizeof(font_css),
+        "textview { font-family: 'Fira Code', 'Source Code Pro', monospace; font-size: %dpt; }",
+        editor_font_size);
+    gtk_css_provider_load_from_data(font_provider, font_css, -1, NULL);
+    if (source_view) {
+        gtk_style_context_add_provider(gtk_widget_get_style_context(source_view),
+            GTK_STYLE_PROVIDER(font_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
+    g_object_unref(font_provider);
+
+    /* Apply tab width */
+    if (source_view) {
+        gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(source_view), editor_tab_width);
+        gtk_source_view_set_indent_width(GTK_SOURCE_VIEW(source_view), editor_tab_width);
+    }
+
+    /* Show/hide compile button based on auto-compile */
+    if (compile_btn) {
+        if (editor_auto_compile) {
+            gtk_widget_hide(compile_btn);
+        } else {
+            gtk_widget_show(compile_btn);
+        }
+    }
+
+    update_status("Settings applied successfully");
+}
+
+/* Settings dialog */
+static void on_settings_clicked(GtkWidget *button, gpointer user_data) {
+    (void)button;
+    (void)user_data;
+
+    GtkWidget *dialog = gtk_dialog_new_with_buttons(
+        "⚙️ Editor Settings",
+        GTK_WINDOW(editor_window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        "_Close", GTK_RESPONSE_CLOSE,
+        NULL);
+
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 450, 400);
+
+    GtkWidget *content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_container_set_border_width(GTK_CONTAINER(content), 12);
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 12);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+    gtk_container_add(GTK_CONTAINER(content), grid);
+
+    int row = 0;
+
+    /* Font size */
+    GtkWidget *font_label = gtk_label_new("📝 Font Size:");
+    gtk_widget_set_halign(font_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), font_label, 0, row, 1, 1);
+
+    GtkWidget *font_spin = gtk_spin_button_new_with_range(8, 24, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(font_spin), editor_font_size);
+    gtk_grid_attach(GTK_GRID(grid), font_spin, 1, row, 1, 1);
+    row++;
+
+    /* Tab width */
+    GtkWidget *tab_label = gtk_label_new("↹ Tab Width:");
+    gtk_widget_set_halign(tab_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), tab_label, 0, row, 1, 1);
+
+    GtkWidget *tab_spin = gtk_spin_button_new_with_range(2, 8, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(tab_spin), editor_tab_width);
+    gtk_grid_attach(GTK_GRID(grid), tab_spin, 1, row, 1, 1);
+    row++;
+
+    /* Auto-compile */
+    GtkWidget *auto_label = gtk_label_new("⚡ Auto-Compile:");
+    gtk_widget_set_halign(auto_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), auto_label, 0, row, 1, 1);
+
+    GtkWidget *auto_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(auto_switch), editor_auto_compile);
+    gtk_grid_attach(GTK_GRID(grid), auto_switch, 1, row, 1, 1);
+    row++;
+
+    /* Preview FPS */
+    GtkWidget *fps_label_setting = gtk_label_new("🎯 Preview FPS:");
+    gtk_widget_set_halign(fps_label_setting, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(grid), fps_label_setting, 0, row, 1, 1);
+
+    GtkWidget *fps_spin = gtk_spin_button_new_with_range(15, 120, 5);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), preview_fps);
+    gtk_grid_attach(GTK_GRID(grid), fps_spin, 1, row, 1, 1);
+    row++;
+
+    /* Separator */
+    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_grid_attach(GTK_GRID(grid), sep, 0, row, 2, 1);
+    row++;
+
+    /* Keyboard shortcuts info */
+    GtkWidget *shortcuts_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(shortcuts_label),
+        "<b>⌨️ Keyboard Shortcuts:</b>\n"
+        "<small>"
+        "Ctrl+S - Save\n"
+        "Ctrl+O - Load\n"
+        "Ctrl+N - New\n"
+        "Ctrl+R / F5 - Compile\n"
+        "Ctrl+I - Install to NeoWall\n"
+        "Ctrl++ / Ctrl+- - Zoom font\n"
+        "F11 - Fullscreen"
+        "</small>");
+    gtk_label_set_xalign(GTK_LABEL(shortcuts_label), 0.0);
+    gtk_grid_attach(GTK_GRID(grid), shortcuts_label, 0, row, 2, 1);
+
+    /* Apply button */
+    GtkWidget *apply_btn = gtk_button_new_with_label("✓ Apply");
+    GtkStyleContext *apply_ctx = gtk_widget_get_style_context(apply_btn);
+    gtk_style_context_add_class(apply_ctx, "suggested-action");
+    gtk_grid_attach(GTK_GRID(grid), apply_btn, 1, row + 1, 1, 1);
+
+    /* Store widgets for apply callback */
+    static GtkWidget *widgets[4];
+    widgets[0] = font_spin;
+    widgets[1] = tab_spin;
+    widgets[2] = auto_switch;
+    widgets[3] = fps_spin;
+
+    g_signal_connect(apply_btn, "clicked", G_CALLBACK(on_apply_settings), widgets);
+
+    gtk_widget_show_all(dialog);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+}
+
+/* Keyboard shortcuts handler */
+static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+
+    guint modifiers = gtk_accelerator_get_default_mod_mask();
+
+    /* Ctrl+S - Save */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_s) {
+        on_save_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+O - Load */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_o) {
+        on_load_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+N - New */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_n) {
+        on_reset_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+R or F5 - Compile */
+    if (((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_r) ||
+        event->keyval == GDK_KEY_F5) {
+        on_compile_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* Ctrl+I - Install to NeoWall */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK && event->keyval == GDK_KEY_i) {
+        on_install_clicked(NULL, NULL);
+        return TRUE;
+    }
+
+    /* F11 - Fullscreen toggle */
+    if (event->keyval == GDK_KEY_F11) {
+        if (gtk_window_is_maximized(GTK_WINDOW(editor_window))) {
+            gtk_window_unmaximize(GTK_WINDOW(editor_window));
+        } else {
+            gtk_window_maximize(GTK_WINDOW(editor_window));
+        }
+        return TRUE;
+    }
+
+    /* Ctrl+Plus/Minus - Font size */
+    if ((event->state & modifiers) == GDK_CONTROL_MASK) {
+        if (event->keyval == GDK_KEY_plus || event->keyval == GDK_KEY_equal) {
+            editor_font_size++;
+            if (editor_font_size > 20) editor_font_size = 20;
+
+            GtkCssProvider *font_provider = gtk_css_provider_new();
+            char font_css[256];
+            snprintf(font_css, sizeof(font_css),
+                "textview { font-family: 'Fira Code', 'Source Code Pro', monospace; font-size: %dpt; }",
+                editor_font_size);
+            gtk_css_provider_load_from_data(font_provider, font_css, -1, NULL);
+            gtk_style_context_add_provider(gtk_widget_get_style_context(source_view),
+                GTK_STYLE_PROVIDER(font_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            g_object_unref(font_provider);
+            return TRUE;
+        }
+        if (event->keyval == GDK_KEY_minus || event->keyval == GDK_KEY_underscore) {
+            editor_font_size--;
+            if (editor_font_size < 8) editor_font_size = 8;
+
+            GtkCssProvider *font_provider = gtk_css_provider_new();
+            char font_css[256];
+            snprintf(font_css, sizeof(font_css),
+                "textview { font-family: 'Fira Code', 'Source Code Pro', monospace; font-size: %dpt; }",
+                editor_font_size);
+            gtk_css_provider_load_from_data(font_provider, font_css, -1, NULL);
+            gtk_style_context_add_provider(gtk_widget_get_style_context(source_view),
+                GTK_STYLE_PROVIDER(font_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            g_object_unref(font_provider);
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 /* Window destroy callback */
 static void on_window_destroy(GtkWidget *widget, gpointer user_data) {
     (void)widget;
@@ -683,6 +923,7 @@ void shader_editor_show(GtkApplication *app) {
     GtkWidget *install_btn = gtk_button_new_with_label("📦 Install to NeoWall");
     compile_btn = gtk_button_new_with_label("⚡ Compile");
     GtkWidget *pause_btn = gtk_toggle_button_new_with_label("⏸ Pause");
+    settings_btn = gtk_button_new_with_label("⚙️ Settings");
 
     /* Style install button as suggested action */
     GtkStyleContext *install_ctx = gtk_widget_get_style_context(install_btn);
@@ -695,7 +936,14 @@ void shader_editor_show(GtkApplication *app) {
     gtk_box_pack_start(GTK_BOX(toolbar), compile_btn, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(toolbar), pause_btn, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL), FALSE, FALSE, SEPARATOR_SPACING);
+    gtk_box_pack_start(GTK_BOX(toolbar), settings_btn, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(toolbar), gtk_separator_new(GTK_ORIENTATION_VERTICAL), FALSE, FALSE, SEPARATOR_SPACING);
     gtk_box_pack_start(GTK_BOX(toolbar), install_btn, FALSE, FALSE, 0);
+
+    /* Hide compile button if auto-compile is on */
+    if (editor_auto_compile) {
+        gtk_widget_set_no_show_all(compile_btn, TRUE);
+    }
 
     /* Spacer */
     GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -739,39 +987,77 @@ void shader_editor_show(GtkApplication *app) {
     /* Source view with scrolled window */
     source_buffer = gtk_source_buffer_new(NULL);
     source_view = gtk_source_view_new_with_buffer(source_buffer);
+
+    /* Editor appearance settings */
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(source_view), TRUE);
+    gtk_source_view_set_show_line_marks(GTK_SOURCE_VIEW(source_view), TRUE);
     gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(source_view), editor_tab_width);
     gtk_source_view_set_auto_indent(GTK_SOURCE_VIEW(source_view), TRUE);
+    gtk_source_view_set_indent_on_tab(GTK_SOURCE_VIEW(source_view), TRUE);
     gtk_source_view_set_insert_spaces_instead_of_tabs(GTK_SOURCE_VIEW(source_view), TRUE);
     gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(source_view), TRUE);
     gtk_source_view_set_show_right_margin(GTK_SOURCE_VIEW(source_view), TRUE);
     gtk_source_view_set_right_margin_position(GTK_SOURCE_VIEW(source_view), 100);
     gtk_text_view_set_monospace(GTK_TEXT_VIEW(source_view), TRUE);
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(source_view), GTK_WRAP_WORD_CHAR);
+
+    /* Enable smart features */
+    gtk_source_view_set_indent_width(GTK_SOURCE_VIEW(source_view), editor_tab_width);
+    gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(source_view), TRUE);
+    gtk_source_view_set_smart_home_end(GTK_SOURCE_VIEW(source_view), GTK_SOURCE_SMART_HOME_END_BEFORE);
 
     /* Enable bracket matching */
     gtk_source_buffer_set_highlight_matching_brackets(source_buffer, TRUE);
 
-    /* Set larger font */
+    /* Enable mini-map */
+    if (editor_show_minimap) {
+        GtkSourceMap *map = GTK_SOURCE_MAP(gtk_source_map_new());
+        gtk_source_map_set_view(map, GTK_SOURCE_VIEW(source_view));
+        gtk_widget_set_size_request(GTK_WIDGET(map), 100, -1);
+    }
+
+    /* Set better font with improved readability */
     GtkCssProvider *font_provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_data(font_provider,
-        "textview { font-family: monospace; font-size: 11pt; }", -1, NULL);
+    char font_css[256];
+    snprintf(font_css, sizeof(font_css),
+        "textview { "
+        "font-family: 'Fira Code', 'Source Code Pro', 'Courier New', monospace; "
+        "font-size: %dpt; "
+        "line-height: 1.4; "
+        "}", editor_font_size);
+    gtk_css_provider_load_from_data(font_provider, font_css, -1, NULL);
     gtk_style_context_add_provider(gtk_widget_get_style_context(source_view),
         GTK_STYLE_PROVIDER(font_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(font_provider);
 
-    /* Try to set GLSL language */
+    /* Try to set GLSL language for syntax highlighting */
     GtkSourceLanguageManager *lang_mgr = gtk_source_language_manager_get_default();
     GtkSourceLanguage *lang = gtk_source_language_manager_get_language(lang_mgr, "glsl");
     if (lang) {
         gtk_source_buffer_set_language(source_buffer, lang);
+        gtk_source_buffer_set_highlight_syntax(source_buffer, TRUE);
     }
 
-    /* Set dark scheme */
+    /* Set dark scheme - try multiple options */
     GtkSourceStyleSchemeManager *scheme_mgr = gtk_source_style_scheme_manager_get_default();
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_mgr, "oblivion");
-    if (scheme) {
-        gtk_source_buffer_set_style_scheme(source_buffer, scheme);
+    const char *dark_schemes[] = {"monokai", "oblivion", "solarized-dark", "cobalt", NULL};
+    for (int i = 0; dark_schemes[i] != NULL; i++) {
+        GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_mgr, dark_schemes[i]);
+        if (scheme) {
+            gtk_source_buffer_set_style_scheme(source_buffer, scheme);
+            break;
+        }
     }
+
+    /* Enable auto-completion */
+    GtkSourceCompletion *completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(source_view));
+
+    /* Add word completion provider */
+    GtkSourceCompletionWords *words_provider = gtk_source_completion_words_new("GLSL", NULL);
+    gtk_source_completion_words_register(words_provider, GTK_TEXT_BUFFER(source_buffer));
+    gtk_source_completion_add_provider(completion,
+        GTK_SOURCE_COMPLETION_PROVIDER(words_provider), NULL);
+    g_object_unref(words_provider);
 
     GtkWidget *scroll = gtk_scrolled_window_new(NULL, NULL);
     gtk_container_add(GTK_CONTAINER(scroll), source_view);
@@ -837,12 +1123,14 @@ void shader_editor_show(GtkApplication *app) {
 
     /* Connect signals */
     g_signal_connect(editor_window, "destroy", G_CALLBACK(on_window_destroy), NULL);
+    g_signal_connect(editor_window, "key-press-event", G_CALLBACK(on_key_press), NULL);
     g_signal_connect(new_btn, "clicked", G_CALLBACK(on_reset_clicked), NULL);
     g_signal_connect(load_btn, "clicked", G_CALLBACK(on_load_clicked), NULL);
     g_signal_connect(save_btn, "clicked", G_CALLBACK(on_save_clicked), NULL);
     g_signal_connect(install_btn, "clicked", G_CALLBACK(on_install_clicked), NULL);
     g_signal_connect(compile_btn, "clicked", G_CALLBACK(on_compile_clicked), NULL);
     g_signal_connect(pause_btn, "toggled", G_CALLBACK(on_pause_toggled), NULL);
+    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), NULL);
     g_signal_connect(source_buffer, "changed", G_CALLBACK(on_buffer_changed), NULL);
     g_signal_connect(source_buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), NULL);
     g_signal_connect(gl_area, "realize", G_CALLBACK(on_gl_realize), NULL);
