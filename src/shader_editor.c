@@ -776,20 +776,7 @@ static void on_auto_compile_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer u
 }
 
 /* Preview FPS changed callback */
-static void on_fps_changed(GtkSpinButton *spin, gpointer user_data) {
-    (void)user_data;
-    int old_fps = preview_fps;
-    preview_fps = gtk_spin_button_get_value_as_int(spin);
 
-    /* Restart animation timer with new FPS */
-    if (animation_timer_id && gl_area) {
-        g_source_remove(animation_timer_id);
-        animation_timer_id = 0;
-        int interval = 1000 / preview_fps;
-        animation_timer_id = g_timeout_add(interval, animation_timer_cb, gl_area);
-    }
-    save_settings();
-}
 
 /* Apply settings callback (legacy) */
 static void on_apply_settings(GtkWidget *widget, gpointer data) {
@@ -876,17 +863,6 @@ static void on_settings_clicked(GtkWidget *button, gpointer user_data) {
     gtk_switch_set_active(GTK_SWITCH(auto_switch), editor_auto_compile);
     g_signal_connect(auto_switch, "notify::active", G_CALLBACK(on_auto_compile_toggled), NULL);
     gtk_grid_attach(GTK_GRID(grid), auto_switch, 1, row, 1, 1);
-    row++;
-
-    /* Preview FPS */
-    GtkWidget *fps_label_setting = gtk_label_new("🎯 Preview FPS:");
-    gtk_widget_set_halign(fps_label_setting, GTK_ALIGN_END);
-    gtk_grid_attach(GTK_GRID(grid), fps_label_setting, 0, row, 1, 1);
-
-    GtkWidget *fps_spin = gtk_spin_button_new_with_range(15, 120, 5);
-    gtk_spin_button_set_value(GTK_SPIN_BUTTON(fps_spin), preview_fps);
-    g_signal_connect(fps_spin, "value-changed", G_CALLBACK(on_fps_changed), NULL);
-    gtk_grid_attach(GTK_GRID(grid), fps_spin, 1, row, 1, 1);
     row++;
 
     /* Separator */
