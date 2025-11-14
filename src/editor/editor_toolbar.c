@@ -209,14 +209,17 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
 
     /* File operations group */
     GtkWidget *new_btn = create_button("document-new", "New");
+    gtk_widget_set_tooltip_text(new_btn, "Create a new shader from template (Ctrl+N)");
     g_signal_connect(new_btn, "clicked", G_CALLBACK(on_new_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), new_btn, FALSE, FALSE, 0);
 
     GtkWidget *load_btn = create_button("document-open", "Load");
+    gtk_widget_set_tooltip_text(load_btn, "Open an existing shader file (Ctrl+O)");
     g_signal_connect(load_btn, "clicked", G_CALLBACK(on_load_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), load_btn, FALSE, FALSE, 0);
 
     GtkWidget *save_btn = create_button("document-save", "Save");
+    gtk_widget_set_tooltip_text(save_btn, "Save current shader to file (Ctrl+S)");
     g_signal_connect(save_btn, "clicked", G_CALLBACK(on_save_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), save_btn, FALSE, FALSE, 0);
 
@@ -225,14 +228,17 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
 
     /* Shader control group */
     toolbar_state.compile_button = create_button("system-run", "Compile");
+    gtk_widget_set_tooltip_text(toolbar_state.compile_button, "Manually compile the shader (Ctrl+R or F5)\nVisible only when auto-compile is off");
     g_signal_connect(toolbar_state.compile_button, "clicked", G_CALLBACK(on_compile_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.compile_button, FALSE, FALSE, 0);
 
     toolbar_state.pause_button = create_toggle_button("media-playback-pause", "Pause");
+    gtk_widget_set_tooltip_text(toolbar_state.pause_button, "Pause/resume shader animation (Space)");
     g_signal_connect(toolbar_state.pause_button, "toggled", G_CALLBACK(on_pause_toggled), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.pause_button, FALSE, FALSE, 0);
 
     GtkWidget *reset_btn = create_button("view-refresh", "Reset");
+    gtk_widget_set_tooltip_text(reset_btn, "Reset animation time to zero (Ctrl+0)");
     g_signal_connect(reset_btn, "clicked", G_CALLBACK(on_reset_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), reset_btn, FALSE, FALSE, 0);
 
@@ -241,6 +247,7 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
 
     /* Installation group */
     toolbar_state.install_button = create_button("go-jump", "Install to NeoWall");
+    gtk_widget_set_tooltip_text(toolbar_state.install_button, "Install shader to NeoWall wallpaper system (Ctrl+I)\nSaves to ~/.config/neowall/shaders/");
     g_signal_connect(toolbar_state.install_button, "clicked", G_CALLBACK(on_install_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.install_button, FALSE, FALSE, 0);
 
@@ -251,7 +258,7 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     /* Right-aligned buttons */
     /* View controls group */
     toolbar_state.split_button = create_toggle_button("view-split-left-right", NULL);
-    gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle Split Orientation");
+    gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle split orientation between horizontal (side-by-side) and vertical (top-bottom)");
     g_signal_connect(toolbar_state.split_button, "toggled", G_CALLBACK(on_toggle_split_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.split_button, FALSE, FALSE, 0);
 
@@ -261,7 +268,7 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
 
     toolbar_state.view_both_button = gtk_radio_button_new_with_label(NULL, "Both");
     gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_both_button), FALSE);
-    gtk_widget_set_tooltip_text(toolbar_state.view_both_button, "Show Both Editor and Preview");
+    gtk_widget_set_tooltip_text(toolbar_state.view_both_button, "Show both editor and preview panels (default)");
     g_signal_connect(toolbar_state.view_both_button, "toggled",
                      G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_BOTH));
     gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_both_button, FALSE, FALSE, 0);
@@ -269,7 +276,7 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     toolbar_state.view_editor_button = gtk_radio_button_new_with_label_from_widget(
         GTK_RADIO_BUTTON(toolbar_state.view_both_button), "Editor");
     gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_editor_button), FALSE);
-    gtk_widget_set_tooltip_text(toolbar_state.view_editor_button, "Show Editor Only");
+    gtk_widget_set_tooltip_text(toolbar_state.view_editor_button, "Show only the code editor\nHides preview for focused coding");
     g_signal_connect(toolbar_state.view_editor_button, "toggled",
                      G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_EDITOR_ONLY));
     gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_editor_button, FALSE, FALSE, 0);
@@ -277,7 +284,7 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     toolbar_state.view_preview_button = gtk_radio_button_new_with_label_from_widget(
         GTK_RADIO_BUTTON(toolbar_state.view_both_button), "Preview");
     gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(toolbar_state.view_preview_button), FALSE);
-    gtk_widget_set_tooltip_text(toolbar_state.view_preview_button, "Show Preview Only");
+    gtk_widget_set_tooltip_text(toolbar_state.view_preview_button, "Show only the shader preview\nPerfect for presentations and fullscreen viewing");
     g_signal_connect(toolbar_state.view_preview_button, "toggled",
                      G_CALLBACK(on_view_mode_toggled), GINT_TO_POINTER(VIEW_MODE_PREVIEW_ONLY));
     gtk_box_pack_start(GTK_BOX(view_group_box), toolbar_state.view_preview_button, FALSE, FALSE, 0);
@@ -285,10 +292,12 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), view_group_box, FALSE, FALSE, 0);
 
     GtkWidget *settings_btn = create_button("preferences-system", "Settings");
+    gtk_widget_set_tooltip_text(settings_btn, "Open settings dialog (Ctrl+,)\nConfigure font, tabs, auto-compile, speed, and layout");
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), settings_btn, FALSE, FALSE, 0);
 
     GtkWidget *exit_btn = create_button("application-exit", "Exit");
+    gtk_widget_set_tooltip_text(exit_btn, "Exit the application (Ctrl+Q)\nPrompts to save if there are unsaved changes");
     g_signal_connect(exit_btn, "clicked", G_CALLBACK(on_exit_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), exit_btn, FALSE, FALSE, 0);
 

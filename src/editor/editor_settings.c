@@ -205,6 +205,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
 
     GtkWidget *font_spin = gtk_spin_button_new_with_range(8, 24, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(font_spin), settings->font_size);
+    gtk_widget_set_tooltip_text(font_spin, "Editor font size in points (8-24)\nLarger fonts are easier to read");
     g_signal_connect(font_spin, "value-changed", G_CALLBACK(on_font_size_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), font_spin, 1, row, 1, 1);
     row++;
@@ -216,6 +217,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
 
     GtkWidget *tab_spin = gtk_spin_button_new_with_range(2, 8, 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(tab_spin), settings->tab_width);
+    gtk_widget_set_tooltip_text(tab_spin, "Number of spaces per tab character (2-8)\nAffects code indentation");
     g_signal_connect(tab_spin, "value-changed", G_CALLBACK(on_tab_width_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), tab_spin, 1, row, 1, 1);
     row++;
@@ -227,6 +229,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
 
     GtkWidget *auto_switch = gtk_switch_new();
     gtk_switch_set_active(GTK_SWITCH(auto_switch), settings->auto_compile);
+    gtk_widget_set_tooltip_text(auto_switch, "Automatically compile shader as you type (500ms delay)\nWhen OFF, use Compile button to manually compile");
     g_signal_connect(auto_switch, "notify::active", G_CALLBACK(on_auto_compile_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), auto_switch, 1, row, 1, 1);
     row++;
@@ -239,6 +242,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
     GtkWidget *speed_spin = gtk_spin_button_new_with_range(0.1, 5.0, 0.1);
     gtk_spin_button_set_digits(GTK_SPIN_BUTTON(speed_spin), 1);
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(speed_spin), settings->shader_speed);
+    gtk_widget_set_tooltip_text(speed_spin, "Animation speed multiplier (0.1-5.0)\n1.0 = normal, 2.0 = double speed, 0.5 = half speed\nUseful for debugging fast/slow animations");
     g_signal_connect(speed_spin, "value-changed", G_CALLBACK(on_shader_speed_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), speed_spin, 1, row, 1, 1);
     row++;
@@ -252,6 +256,7 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Horizontal (Side by Side)");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(split_combo), "Vertical (Top and Bottom)");
     gtk_combo_box_set_active(GTK_COMBO_BOX(split_combo), settings->split_orientation);
+    gtk_widget_set_tooltip_text(split_combo, "Layout orientation for editor and preview\nHorizontal: Best for wide screens\nVertical: Best for tall/narrow screens\nAlso adjustable via toolbar button");
     g_signal_connect(split_combo, "changed", G_CALLBACK(on_split_orientation_changed), &cb_data);
     gtk_grid_attach(GTK_GRID(grid), split_combo, 1, row, 1, 1);
     row++;
