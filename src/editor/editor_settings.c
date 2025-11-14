@@ -40,12 +40,17 @@ void editor_settings_save(const EditorSettings *settings) {
     fprintf(f, "show_whitespace=%d\n", settings->show_whitespace ? 1 : 0);
     fprintf(f, "word_wrap=%d\n", settings->word_wrap ? 1 : 0);
     fprintf(f, "cursor_style=%d\n", settings->cursor_style);
+    fprintf(f, "show_indent_guides=%d\n", settings->show_indent_guides ? 1 : 0);
+    fprintf(f, "background_pattern=%d\n", settings->background_pattern ? 1 : 0);
+    fprintf(f, "scroll_past_end=%d\n", settings->scroll_past_end ? 1 : 0);
+    fprintf(f, "mark_occurrences=%d\n", settings->mark_occurrences ? 1 : 0);
     fprintf(f, "# Editor Behavior\n");
     fprintf(f, "tab_width=%d\n", settings->tab_width);
     fprintf(f, "insert_spaces=%d\n", settings->insert_spaces ? 1 : 0);
     fprintf(f, "auto_indent=%d\n", settings->auto_indent ? 1 : 0);
     fprintf(f, "smart_home_end=%d\n", settings->smart_home_end ? 1 : 0);
     fprintf(f, "bracket_matching=%d\n", settings->bracket_matching ? 1 : 0);
+    fprintf(f, "auto_completion=%d\n", settings->auto_completion ? 1 : 0);
     fprintf(f, "# Compilation\n");
     fprintf(f, "auto_compile=%d\n", settings->auto_compile ? 1 : 0);
     fprintf(f, "# Preview\n");
@@ -72,11 +77,16 @@ void editor_settings_load(EditorSettings *settings) {
     settings->show_whitespace = false;
     settings->word_wrap = false;
     settings->cursor_style = CURSOR_STYLE_BLOCK;
+    settings->show_indent_guides = true;
+    settings->background_pattern = true;
+    settings->scroll_past_end = true;
+    settings->mark_occurrences = true;
     settings->tab_width = 4;
     settings->insert_spaces = true;
     settings->auto_indent = true;
     settings->smart_home_end = true;
     settings->bracket_matching = true;
+    settings->auto_completion = true;
     settings->auto_compile = true;
     settings->preview_fps = 60;
     settings->shader_speed = 1.0;
@@ -126,6 +136,14 @@ void editor_settings_load(EditorSettings *settings) {
             if (value >= 0 && value <= 1) {
                 settings->cursor_style = (CursorStyle)value;
             }
+        } else if (sscanf(line, "show_indent_guides=%d", &value) == 1) {
+            settings->show_indent_guides = (value != 0);
+        } else if (sscanf(line, "background_pattern=%d", &value) == 1) {
+            settings->background_pattern = (value != 0);
+        } else if (sscanf(line, "scroll_past_end=%d", &value) == 1) {
+            settings->scroll_past_end = (value != 0);
+        } else if (sscanf(line, "mark_occurrences=%d", &value) == 1) {
+            settings->mark_occurrences = (value != 0);
         } else if (sscanf(line, "tab_width=%d", &value) == 1) {
             if (value >= 2 && value <= 8) {
                 settings->tab_width = value;
@@ -138,6 +156,8 @@ void editor_settings_load(EditorSettings *settings) {
             settings->smart_home_end = (value != 0);
         } else if (sscanf(line, "bracket_matching=%d", &value) == 1) {
             settings->bracket_matching = (value != 0);
+        } else if (sscanf(line, "auto_completion=%d", &value) == 1) {
+            settings->auto_completion = (value != 0);
         } else if (sscanf(line, "auto_compile=%d", &value) == 1) {
             settings->auto_compile = (value != 0);
         } else if (sscanf(line, "preview_fps=%d", &value) == 1) {
@@ -271,6 +291,46 @@ static void on_word_wrap_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data
 static void on_cursor_style_changed(GtkComboBox *combo, gpointer data) {
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->cursor_style = (CursorStyle)gtk_combo_box_get_active(combo);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_indent_guides_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->show_indent_guides = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_background_pattern_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->background_pattern = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_scroll_past_end_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->scroll_past_end = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_mark_occurrences_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->mark_occurrences = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_auto_completion_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->auto_completion = gtk_switch_get_active(sw);
     editor_settings_save(cb_data->settings);
     if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
 }
@@ -436,6 +496,54 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_attach(GTK_GRID(appearance_grid), cursor_combo, 1, row, 1, 1);
     row++;
 
+    /* Show indent guides */
+    GtkWidget *indent_guides_label = gtk_label_new("Show Indent Guides:");
+    gtk_widget_set_halign(indent_guides_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), indent_guides_label, 0, row, 1, 1);
+
+    GtkWidget *indent_guides_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(indent_guides_switch), settings->show_indent_guides);
+    gtk_widget_set_tooltip_text(indent_guides_switch, "Display vertical indent guide lines");
+    g_signal_connect(indent_guides_switch, "notify::active", G_CALLBACK(on_indent_guides_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), indent_guides_switch, 1, row, 1, 1);
+    row++;
+
+    /* Background pattern */
+    GtkWidget *bg_pattern_label = gtk_label_new("Background Pattern:");
+    gtk_widget_set_halign(bg_pattern_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), bg_pattern_label, 0, row, 1, 1);
+
+    GtkWidget *bg_pattern_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(bg_pattern_switch), settings->background_pattern);
+    gtk_widget_set_tooltip_text(bg_pattern_switch, "Show subtle grid pattern in background");
+    g_signal_connect(bg_pattern_switch, "notify::active", G_CALLBACK(on_background_pattern_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), bg_pattern_switch, 1, row, 1, 1);
+    row++;
+
+    /* Scroll past end */
+    GtkWidget *scroll_past_label = gtk_label_new("Scroll Past End:");
+    gtk_widget_set_halign(scroll_past_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), scroll_past_label, 0, row, 1, 1);
+
+    GtkWidget *scroll_past_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(scroll_past_switch), settings->scroll_past_end);
+    gtk_widget_set_tooltip_text(scroll_past_switch, "Allow scrolling beyond the last line");
+    g_signal_connect(scroll_past_switch, "notify::active", G_CALLBACK(on_scroll_past_end_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), scroll_past_switch, 1, row, 1, 1);
+    row++;
+
+    /* Mark occurrences */
+    GtkWidget *mark_occur_label = gtk_label_new("Mark Occurrences:");
+    gtk_widget_set_halign(mark_occur_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), mark_occur_label, 0, row, 1, 1);
+
+    GtkWidget *mark_occur_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(mark_occur_switch), settings->mark_occurrences);
+    gtk_widget_set_tooltip_text(mark_occur_switch, "Highlight all occurrences of selected text");
+    g_signal_connect(mark_occur_switch, "notify::active", G_CALLBACK(on_mark_occurrences_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), mark_occur_switch, 1, row, 1, 1);
+    row++;
+
     /* ===== BEHAVIOR TAB ===== */
     GtkWidget *behavior_grid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(behavior_grid), 10);
@@ -467,6 +575,18 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_tooltip_text(auto_switch, "Compile shader automatically as you type (500ms delay)");
     g_signal_connect(auto_switch, "notify::active", G_CALLBACK(on_auto_compile_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(behavior_grid), auto_switch, 1, row, 1, 1);
+    row++;
+
+    /* Auto-completion */
+    GtkWidget *completion_label = gtk_label_new("Auto-Completion:");
+    gtk_widget_set_halign(completion_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(behavior_grid), completion_label, 0, row, 1, 1);
+
+    GtkWidget *completion_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(completion_switch), settings->auto_completion);
+    gtk_widget_set_tooltip_text(completion_switch, "Enable code completion for GLSL keywords and functions");
+    g_signal_connect(completion_switch, "notify::active", G_CALLBACK(on_auto_completion_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(behavior_grid), completion_switch, 1, row, 1, 1);
     row++;
 
     /* ===== PREVIEW TAB ===== */

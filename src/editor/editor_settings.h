@@ -33,6 +33,10 @@ typedef struct {
     bool show_whitespace;
     bool word_wrap;
     CursorStyle cursor_style;
+    bool show_indent_guides;
+    bool background_pattern;
+    bool scroll_past_end;
+    bool mark_occurrences;
     
     /* Editor behavior */
     int tab_width;
@@ -40,6 +44,7 @@ typedef struct {
     bool auto_indent;
     bool smart_home_end;
     bool bracket_matching;
+    bool auto_completion;
     
     /* Compilation */
     bool auto_compile;
@@ -64,11 +69,16 @@ typedef struct {
     .show_whitespace = false, \
     .word_wrap = false, \
     .cursor_style = CURSOR_STYLE_BLOCK, \
+    .show_indent_guides = true, \
+    .background_pattern = true, \
+    .scroll_past_end = true, \
+    .mark_occurrences = true, \
     .tab_width = 4, \
     .insert_spaces = true, \
     .auto_indent = true, \
     .smart_home_end = true, \
     .bracket_matching = true, \
+    .auto_completion = true, \
     .auto_compile = true, \
     .preview_fps = 60, \
     .shader_speed = 1.0, \
