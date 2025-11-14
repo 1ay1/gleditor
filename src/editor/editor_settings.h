@@ -16,18 +16,51 @@ typedef enum {
 
 /* Editor settings structure */
 typedef struct {
+    /* Editor appearance */
+    char font_family[64];
     int font_size;
+    char theme[32];
+    bool show_line_numbers;
+    bool highlight_current_line;
+    bool show_right_margin;
+    int right_margin_position;
+    bool show_whitespace;
+    bool word_wrap;
+    
+    /* Editor behavior */
     int tab_width;
+    bool insert_spaces;
+    bool auto_indent;
+    bool smart_home_end;
+    bool bracket_matching;
+    
+    /* Compilation */
     bool auto_compile;
+    
+    /* Preview */
     int preview_fps;
     double shader_speed;
+    
+    /* Layout */
     SplitOrientation split_orientation;
 } EditorSettings;
 
 /* Default settings */
 #define EDITOR_SETTINGS_DEFAULT { \
-    .font_size = 12, \
+    .font_family = "Monospace", \
+    .font_size = 11, \
+    .theme = "oblivion", \
+    .show_line_numbers = true, \
+    .highlight_current_line = true, \
+    .show_right_margin = true, \
+    .right_margin_position = 80, \
+    .show_whitespace = false, \
+    .word_wrap = false, \
     .tab_width = 4, \
+    .insert_spaces = true, \
+    .auto_indent = true, \
+    .smart_home_end = true, \
+    .bracket_matching = true, \
     .auto_compile = true, \
     .preview_fps = 60, \
     .shader_speed = 1.0, \

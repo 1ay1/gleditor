@@ -514,6 +514,9 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     window_state.toolbar_widget = editor_toolbar_create(&toolbar_callbacks);
     gtk_box_pack_start(GTK_BOX(vbox), window_state.toolbar_widget, FALSE, FALSE, 0);
 
+    /* Load editor settings BEFORE creating editor */
+    editor_settings_load(&editor_settings);
+
     /* Create paned for editor and preview */
     GtkOrientation orientation = (editor_settings.split_orientation == SPLIT_HORIZONTAL)
         ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL;
@@ -549,9 +552,6 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
 
     /* Set error click callback on status bar */
     editor_statusbar_set_error_click_callback(on_error_status_clicked, NULL);
-
-    /* Load editor settings */
-    editor_settings_load(&editor_settings);
 
     /* Apply initial settings to editor */
     editor_text_set_font_size(editor_settings.font_size);
