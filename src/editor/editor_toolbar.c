@@ -239,6 +239,16 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     /* Separator */
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
 
+    /* Installation group */
+    toolbar_state.install_button = create_button("go-jump", "Install to NeoWall");
+    g_signal_connect(toolbar_state.install_button, "clicked", G_CALLBACK(on_install_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.install_button, FALSE, FALSE, 0);
+
+    /* Spacer to push right-aligned buttons to the end */
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), spacer, TRUE, TRUE, 0);
+
+    /* Right-aligned buttons */
     /* View controls group */
     toolbar_state.split_button = create_toggle_button("view-split-left-right", NULL);
     gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle Split Orientation");
@@ -274,19 +284,6 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
 
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), view_group_box, FALSE, FALSE, 0);
 
-    /* Separator */
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
-
-    /* Installation group */
-    toolbar_state.install_button = create_button("go-jump", "Install to NeoWall");
-    g_signal_connect(toolbar_state.install_button, "clicked", G_CALLBACK(on_install_clicked), NULL);
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.install_button, FALSE, FALSE, 0);
-
-    /* Spacer to push right-aligned buttons to the end */
-    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), spacer, TRUE, TRUE, 0);
-
-    /* Right-aligned buttons */
     GtkWidget *settings_btn = create_button("preferences-system", "Settings");
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_settings_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), settings_btn, FALSE, FALSE, 0);
