@@ -383,6 +383,8 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_set_row_spacing(GTK_GRID(appearance_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(appearance_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(appearance_grid), 12);
+    gtk_widget_set_hexpand(appearance_grid, TRUE);
+    gtk_widget_set_vexpand(appearance_grid, TRUE);
     gtk_container_add(GTK_CONTAINER(appearance_viewport), appearance_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), appearance_scroll, gtk_label_new("🎨 Appearance"));
 
@@ -572,6 +574,8 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_set_row_spacing(GTK_GRID(behavior_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(behavior_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(behavior_grid), 12);
+    gtk_widget_set_hexpand(behavior_grid, TRUE);
+    gtk_widget_set_vexpand(behavior_grid, TRUE);
     gtk_container_add(GTK_CONTAINER(behavior_viewport), behavior_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), behavior_scroll, gtk_label_new("⚙️ Behavior"));
 
@@ -626,6 +630,8 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_set_row_spacing(GTK_GRID(preview_grid), 10);
     gtk_grid_set_column_spacing(GTK_GRID(preview_grid), 12);
     gtk_container_set_border_width(GTK_CONTAINER(preview_grid), 12);
+    gtk_widget_set_hexpand(preview_grid, TRUE);
+    gtk_widget_set_vexpand(preview_grid, TRUE);
     gtk_container_add(GTK_CONTAINER(preview_viewport), preview_grid);
     gtk_notebook_append_page(GTK_NOTEBOOK(notebook), preview_scroll, gtk_label_new("🎬 Preview"));
 
