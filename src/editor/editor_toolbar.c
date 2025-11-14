@@ -12,16 +12,28 @@ static struct {
     GtkWidget *pause_button;
     GtkWidget *compile_button;
     GtkWidget *install_button;
+    GtkWidget *split_button;
+    GtkWidget *editor_button;
+    GtkWidget *preview_button;
     editor_toolbar_callbacks_t callbacks;
     bool is_paused;
+    bool is_horizontal;
+    bool editor_visible;
+    bool preview_visible;
     bool initialized;
 } toolbar_state = {
     .toolbar = NULL,
     .pause_button = NULL,
     .compile_button = NULL,
     .install_button = NULL,
+    .split_button = NULL,
+    .editor_button = NULL,
+    .preview_button = NULL,
     .callbacks = {0},
     .is_paused = false,
+    .is_horizontal = true,
+    .editor_visible = true,
+    .preview_visible = true,
     .initialized = false
 };
 
@@ -95,6 +107,30 @@ static void on_exit_clicked(GtkWidget *widget, gpointer user_data) {
     (void)user_data;
     if (toolbar_state.callbacks.on_exit) {
         toolbar_state.callbacks.on_exit(toolbar_state.callbacks.user_data);
+    }
+}
+
+static void on_toggle_split_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    if (toolbar_state.callbacks.on_toggle_split) {
+        toolbar_state.callbacks.on_toggle_split(toolbar_state.callbacks.user_data);
+    }
+}
+
+static void on_toggle_editor_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    if (toolbar_state.callbacks.on_toggle_editor) {
+        toolbar_state.callbacks.on_toggle_editor(toolbar_state.callbacks.user_data);
+    }
+}
+
+static void on_toggle_preview_clicked(GtkWidget *widget, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    if (toolbar_state.callbacks.on_toggle_preview) {
+        toolbar_state.callbacks.on_toggle_preview(toolbar_state.callbacks.user_data);
     }
 }
 
@@ -202,6 +238,25 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     /* Separator */
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
 
+    /* View controls group */
+    toolbar_state.split_button = create_button("view-split-left-right", "⇆");
+    gtk_widget_set_tooltip_text(toolbar_state.split_button, "Toggle Split Orientation (Horizontal/Vertical)");
+    g_signal_connect(toolbar_state.split_button, "clicked", G_CALLBACK(on_toggle_split_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.split_button, FALSE, FALSE, 0);
+
+    toolbar_state.editor_button = create_button("text-x-generic", "📝");
+    gtk_widget_set_tooltip_text(toolbar_state.editor_button, "Toggle Editor Visibility");
+    g_signal_connect(toolbar_state.editor_button, "clicked", G_CALLBACK(on_toggle_editor_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.editor_button, FALSE, FALSE, 0);
+
+    toolbar_state.preview_button = create_button("video-display", "🎬");
+    gtk_widget_set_tooltip_text(toolbar_state.preview_button, "Toggle Preview Visibility");
+    g_signal_connect(toolbar_state.preview_button, "clicked", G_CALLBACK(on_toggle_preview_clicked), NULL);
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.preview_button, FALSE, FALSE, 0);
+
+    /* Separator */
+    gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
+
     /* Installation group */
     toolbar_state.install_button = create_button("go-jump", "Install to NeoWall");
     g_signal_connect(toolbar_state.install_button, "clicked", G_CALLBACK(on_install_clicked), NULL);
@@ -269,6 +324,56 @@ GtkWidget *editor_toolbar_get_pause_button(void) {
     return toolbar_state.pause_button;
 }
 
+void editor_toolbar_set_split_orientation(bool is_horizontal) {
+    if (!toolbar_state.split_button) {
+        return;
+    }
+
+    toolbar_state.is_horizontal = is_horizontal;
+
+    /* Update button icon based on orientation */
+    GtkWidget *box = gtk_bin_get_child(GTK_BIN(toolbar_state.split_button));
+    GList *children = gtk_container_get_children(GTK_CONTAINER(box));
+
+    if (children && children->data) {
+        GtkWidget *icon = GTK_WIDGET(children->data);
+        const char *icon_name = is_horizontal ? "view-split-left-right" : "view-split-top-bottom";
+        gtk_image_set_from_icon_name(GTK_IMAGE(icon), icon_name, GTK_ICON_SIZE_BUTTON);
+    }
+
+    g_list_free(children);
+}
+
+void editor_toolbar_set_editor_visible(bool visible) {
+    if (!toolbar_state.editor_button) {
+        return;
+    }
+
+    toolbar_state.editor_visible = visible;
+
+    /* Update button appearance to show state */
+    if (visible) {
+        gtk_widget_set_opacity(toolbar_state.editor_button, 1.0);
+    } else {
+        gtk_widget_set_opacity(toolbar_state.editor_button, 0.4);
+    }
+}
+
+void editor_toolbar_set_preview_visible(bool visible) {
+    if (!toolbar_state.preview_button) {
+        return;
+    }
+
+    toolbar_state.preview_visible = visible;
+
+    /* Update button appearance to show state */
+    if (visible) {
+        gtk_widget_set_opacity(toolbar_state.preview_button, 1.0);
+    } else {
+        gtk_widget_set_opacity(toolbar_state.preview_button, 0.4);
+    }
+}
+
 void editor_toolbar_destroy(void) {
     if (!toolbar_state.initialized) {
         return;
@@ -279,7 +384,13 @@ void editor_toolbar_destroy(void) {
     toolbar_state.pause_button = NULL;
     toolbar_state.compile_button = NULL;
     toolbar_state.install_button = NULL;
+    toolbar_state.split_button = NULL;
+    toolbar_state.editor_button = NULL;
+    toolbar_state.preview_button = NULL;
     memset(&toolbar_state.callbacks, 0, sizeof(toolbar_state.callbacks));
     toolbar_state.is_paused = false;
+    toolbar_state.is_horizontal = true;
+    toolbar_state.editor_visible = true;
+    toolbar_state.preview_visible = true;
     toolbar_state.initialized = false;
 }

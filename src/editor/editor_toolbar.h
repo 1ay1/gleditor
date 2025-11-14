@@ -24,6 +24,9 @@ typedef struct {
     editor_toolbar_callback_t on_install;
     editor_toolbar_callback_t on_settings;
     editor_toolbar_callback_t on_exit;
+    editor_toolbar_callback_t on_toggle_split;
+    editor_toolbar_callback_t on_toggle_editor;
+    editor_toolbar_callback_t on_toggle_preview;
     gpointer user_data;
 } editor_toolbar_callbacks_t;
 
@@ -76,6 +79,27 @@ void editor_toolbar_set_install_sensitive(bool sensitive);
  * @return The pause toggle button
  */
 GtkWidget *editor_toolbar_get_pause_button(void);
+
+/**
+ * Update split orientation button icon
+ * 
+ * @param is_horizontal true for horizontal, false for vertical
+ */
+void editor_toolbar_set_split_orientation(bool is_horizontal);
+
+/**
+ * Update editor visibility button state
+ * 
+ * @param visible true if editor is visible
+ */
+void editor_toolbar_set_editor_visible(bool visible);
+
+/**
+ * Update preview visibility button state
+ * 
+ * @param visible true if preview is visible
+ */
+void editor_toolbar_set_preview_visible(bool visible);
 
 /**
  * Destroy the toolbar and free resources
