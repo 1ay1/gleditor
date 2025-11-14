@@ -123,7 +123,7 @@ void editor_settings_load(EditorSettings *settings) {
         } else if (sscanf(line, "word_wrap=%d", &value) == 1) {
             settings->word_wrap = (value != 0);
         } else if (sscanf(line, "cursor_style=%d", &value) == 1) {
-            if (value >= 0 && value <= 2) {
+            if (value >= 0 && value <= 1) {
                 settings->cursor_style = (CursorStyle)value;
             }
         } else if (sscanf(line, "tab_width=%d", &value) == 1) {
@@ -428,9 +428,8 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_grid_attach(GTK_GRID(appearance_grid), cursor_label, 0, row, 1, 1);
 
     GtkWidget *cursor_combo = gtk_combo_box_text_new();
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "Block");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "I-Beam (Vertical Line)");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "Underline");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "Block (Overwrite Mode)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "I-Beam (Insert Mode)");
     gtk_combo_box_set_active(GTK_COMBO_BOX(cursor_combo), settings->cursor_style);
     gtk_widget_set_tooltip_text(cursor_combo, "Cursor appearance style");
     g_signal_connect(cursor_combo, "changed", G_CALLBACK(on_cursor_style_changed), &cb_data);

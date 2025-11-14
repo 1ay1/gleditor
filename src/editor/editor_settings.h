@@ -17,8 +17,7 @@ typedef enum {
 /* Cursor style options */
 typedef enum {
     CURSOR_STYLE_BLOCK = 0,
-    CURSOR_STYLE_IBEAM = 1,
-    CURSOR_STYLE_UNDERLINE = 2
+    CURSOR_STYLE_IBEAM = 1
 } CursorStyle;
 
 /* Editor settings structure */
