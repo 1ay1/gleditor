@@ -646,7 +646,7 @@ void shader_editor_show(GtkApplication *app) {
 
     /* Create main window */
     editor_window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(editor_window), "🎨 NeoWall Shader Editor");
+    gtk_window_set_title(GTK_WINDOW(editor_window), "🎨 gleditor");
     gtk_window_set_default_size(GTK_WINDOW(editor_window),
                                DIALOG_WIDTH_STANDARD, DIALOG_HEIGHT_STANDARD);
     gtk_container_set_border_width(GTK_CONTAINER(editor_window), 0);
