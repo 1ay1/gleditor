@@ -4,6 +4,7 @@
 
 #include "editor_text.h"
 #include "editor_settings.h"
+#include "glsl_completion.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -118,10 +119,8 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     bool auto_indent = use_settings ? settings->auto_indent : true;
     bool insert_spaces = use_settings ? settings->insert_spaces : true;
     CursorStyle cursor_style = use_settings ? settings->cursor_style : CURSOR_STYLE_BLOCK;
-    bool show_indent_guides = use_settings ? settings->show_indent_guides : true;
     bool background_pattern = use_settings ? settings->background_pattern : true;
     bool scroll_past_end = use_settings ? settings->scroll_past_end : true;
-    bool mark_occurrences = use_settings ? settings->mark_occurrences : true;
 
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(editor_state.source_view), show_line_numbers);
     gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(editor_state.source_view), highlight_current_line);
@@ -178,6 +177,27 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(editor_state.scrolled_window),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_container_add(GTK_CONTAINER(editor_state.scrolled_window), editor_state.source_view);
+
+    /* Setup auto-completion */
+    GtkSourceCompletion *completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor_state.source_view));
+    if (completion) {
+        GtkSourceCompletionProvider *glsl_provider = glsl_completion_provider_new();
+        GError *error = NULL;
+        if (!gtk_source_completion_add_provider(completion, glsl_provider, &error)) {
+            if (error) {
+                g_warning("Failed to add GLSL completion provider: %s", error->message);
+                g_error_free(error);
+            }
+        }
+        g_object_unref(glsl_provider);
+
+        /* Configure completion settings */
+        g_object_set(completion,
+                     "show-headers", FALSE,
+                     "show-icons", TRUE,
+                     "remember-info-visibility", TRUE,
+                     NULL);
+    }
 
     /* Connect signals */
     g_signal_connect(editor_state.source_buffer, "changed",

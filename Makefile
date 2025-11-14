@@ -174,7 +174,8 @@ EDITOR_SOURCES := $(EDITOR_DIR)/editor_text.c \
                   $(EDITOR_DIR)/editor_error_panel.c \
                   $(EDITOR_DIR)/file_operations.c \
                   $(EDITOR_DIR)/editor_window.c \
-                  $(EDITOR_DIR)/editor_settings.c
+                  $(EDITOR_DIR)/editor_settings.c \
+                  $(EDITOR_DIR)/glsl_completion.c
 
 # Main application sources
 APP_SOURCES := $(SRC_DIR)/main.c \
