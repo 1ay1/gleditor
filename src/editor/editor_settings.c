@@ -39,6 +39,7 @@ void editor_settings_save(const EditorSettings *settings) {
     fprintf(f, "right_margin_position=%d\n", settings->right_margin_position);
     fprintf(f, "show_whitespace=%d\n", settings->show_whitespace ? 1 : 0);
     fprintf(f, "word_wrap=%d\n", settings->word_wrap ? 1 : 0);
+    fprintf(f, "cursor_style=%d\n", settings->cursor_style);
     fprintf(f, "# Editor Behavior\n");
     fprintf(f, "tab_width=%d\n", settings->tab_width);
     fprintf(f, "insert_spaces=%d\n", settings->insert_spaces ? 1 : 0);
@@ -70,6 +71,7 @@ void editor_settings_load(EditorSettings *settings) {
     settings->right_margin_position = 80;
     settings->show_whitespace = false;
     settings->word_wrap = false;
+    settings->cursor_style = CURSOR_STYLE_BLOCK;
     settings->tab_width = 4;
     settings->insert_spaces = true;
     settings->auto_indent = true;
@@ -120,6 +122,10 @@ void editor_settings_load(EditorSettings *settings) {
             settings->show_whitespace = (value != 0);
         } else if (sscanf(line, "word_wrap=%d", &value) == 1) {
             settings->word_wrap = (value != 0);
+        } else if (sscanf(line, "cursor_style=%d", &value) == 1) {
+            if (value >= 0 && value <= 2) {
+                settings->cursor_style = (CursorStyle)value;
+            }
         } else if (sscanf(line, "tab_width=%d", &value) == 1) {
             if (value >= 2 && value <= 8) {
                 settings->tab_width = value;
@@ -258,6 +264,13 @@ static void on_word_wrap_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data
     (void)pspec;
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->word_wrap = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
+}
+
+static void on_cursor_style_changed(GtkComboBox *combo, gpointer data) {
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->cursor_style = (CursorStyle)gtk_combo_box_get_active(combo);
     editor_settings_save(cb_data->settings);
     if (cb_data->on_change) cb_data->on_change(cb_data->settings, cb_data->user_data);
 }
@@ -407,6 +420,21 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_tooltip_text(bracket_switch, "Highlight matching brackets");
     g_signal_connect(bracket_switch, "notify::active", G_CALLBACK(on_bracket_matching_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(appearance_grid), bracket_switch, 1, row, 1, 1);
+    row++;
+
+    /* Cursor style */
+    GtkWidget *cursor_label = gtk_label_new("Cursor Style:");
+    gtk_widget_set_halign(cursor_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(appearance_grid), cursor_label, 0, row, 1, 1);
+
+    GtkWidget *cursor_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "Block");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "I-Beam (Vertical Line)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(cursor_combo), "Underline");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(cursor_combo), settings->cursor_style);
+    gtk_widget_set_tooltip_text(cursor_combo, "Cursor appearance style");
+    g_signal_connect(cursor_combo, "changed", G_CALLBACK(on_cursor_style_changed), &cb_data);
+    gtk_grid_attach(GTK_GRID(appearance_grid), cursor_combo, 1, row, 1, 1);
     row++;
 
     /* ===== BEHAVIOR TAB ===== */

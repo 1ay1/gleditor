@@ -117,6 +117,7 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     bool bracket_matching = use_settings ? settings->bracket_matching : true;
     bool auto_indent = use_settings ? settings->auto_indent : true;
     bool insert_spaces = use_settings ? settings->insert_spaces : true;
+    CursorStyle cursor_style = use_settings ? settings->cursor_style : CURSOR_STYLE_BLOCK;
 
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(editor_state.source_view), show_line_numbers);
     gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(editor_state.source_view), highlight_current_line);
@@ -129,6 +130,14 @@ GtkWidget *editor_text_create(const EditorSettings *settings) {
     gtk_source_buffer_set_highlight_matching_brackets(editor_state.source_buffer, bracket_matching);
     gtk_source_view_set_smart_home_end(GTK_SOURCE_VIEW(editor_state.source_view), GTK_SOURCE_SMART_HOME_END_BEFORE);
     gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
+
+    /* Set cursor style - GtkTextView doesn't support cursor style changes directly */
+    /* Block cursor is achieved through overwrite mode */
+    if (cursor_style == CURSOR_STYLE_BLOCK) {
+        gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), TRUE);
+    } else {
+        gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), FALSE);
+    }
 
     /* Set monospace font */
     char font_desc[128];
@@ -249,6 +258,13 @@ void editor_text_apply_all_settings(const EditorSettings *settings) {
                                            GTK_SOURCE_SMART_HOME_END_DISABLED);
     }
     gtk_source_view_set_smart_backspace(GTK_SOURCE_VIEW(editor_state.source_view), TRUE);
+
+    /* Apply cursor style */
+    if (settings->cursor_style == CURSOR_STYLE_BLOCK) {
+        gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), TRUE);
+    } else {
+        gtk_text_view_set_overwrite(GTK_TEXT_VIEW(editor_state.source_view), FALSE);
+    }
 
     /* Apply font */
     char font_desc[128];

@@ -14,6 +14,13 @@ typedef enum {
     SPLIT_VERTICAL = 1
 } SplitOrientation;
 
+/* Cursor style options */
+typedef enum {
+    CURSOR_STYLE_BLOCK = 0,
+    CURSOR_STYLE_IBEAM = 1,
+    CURSOR_STYLE_UNDERLINE = 2
+} CursorStyle;
+
 /* Editor settings structure */
 typedef struct {
     /* Editor appearance */
@@ -26,6 +33,7 @@ typedef struct {
     int right_margin_position;
     bool show_whitespace;
     bool word_wrap;
+    CursorStyle cursor_style;
     
     /* Editor behavior */
     int tab_width;
@@ -56,6 +64,7 @@ typedef struct {
     .right_margin_position = 80, \
     .show_whitespace = false, \
     .word_wrap = false, \
+    .cursor_style = CURSOR_STYLE_BLOCK, \
     .tab_width = 4, \
     .insert_spaces = true, \
     .auto_indent = true, \
