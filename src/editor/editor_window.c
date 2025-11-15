@@ -87,7 +87,8 @@ static struct {
     GtkWidget *editor_vbox;
     GtkWidget *text_widget;
     GtkWidget *preview_widget;
-    GtkWidget *preview_fullscreen;
+    GtkWidget *preview_container_paned;
+    GtkWidget *preview_container_fullscreen;
     GtkWidget *toolbar_widget;
     GtkWidget *statusbar_widget;
     GtkWidget *error_panel_widget;
@@ -104,7 +105,8 @@ static struct {
     .editor_vbox = NULL,
     .text_widget = NULL,
     .preview_widget = NULL,
-    .preview_fullscreen = NULL,
+    .preview_container_paned = NULL,
+    .preview_container_fullscreen = NULL,
     .toolbar_widget = NULL,
     .statusbar_widget = NULL,
     .error_panel_widget = NULL,
@@ -380,10 +382,22 @@ static void on_toggle_split_clicked(gpointer user_data) {
 static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
     (void)user_data;
 
-    if (!window_state.view_stack) return;
+    if (!window_state.view_stack || !window_state.preview_widget) return;
 
     switch (mode) {
         case VIEW_MODE_BOTH:
+            /* Reparent preview to paned container */
+            if (gtk_widget_get_parent(window_state.preview_widget) != window_state.preview_container_paned) {
+                g_object_ref(window_state.preview_widget);
+                GtkWidget *old_parent = gtk_widget_get_parent(window_state.preview_widget);
+                if (old_parent) {
+                    gtk_container_remove(GTK_CONTAINER(old_parent), window_state.preview_widget);
+                }
+                gtk_box_pack_start(GTK_BOX(window_state.preview_container_paned),
+                                  window_state.preview_widget, TRUE, TRUE, 0);
+                g_object_unref(window_state.preview_widget);
+            }
+
             /* Show paned layout */
             gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "paned");
             gtk_widget_show(window_state.text_widget);
@@ -404,8 +418,21 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
             break;
 
         case VIEW_MODE_PREVIEW_ONLY:
+            /* Reparent preview to fullscreen container */
+            if (gtk_widget_get_parent(window_state.preview_widget) != window_state.preview_container_fullscreen) {
+                g_object_ref(window_state.preview_widget);
+                GtkWidget *old_parent = gtk_widget_get_parent(window_state.preview_widget);
+                if (old_parent) {
+                    gtk_container_remove(GTK_CONTAINER(old_parent), window_state.preview_widget);
+                }
+                gtk_box_pack_start(GTK_BOX(window_state.preview_container_fullscreen),
+                                  window_state.preview_widget, TRUE, TRUE, 0);
+                g_object_unref(window_state.preview_widget);
+            }
+
             /* Show fullscreen preview layout */
             gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "preview");
+            gtk_widget_show(window_state.preview_widget);
             /* Resume rendering when preview is visible */
             editor_preview_set_paused(false);
             editor_statusbar_set_message("Preview fullscreen with tabs");
@@ -760,10 +787,7 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     window_state.text_widget = editor_text_create(&editor_settings);
     /* Note: callbacks connected after initial content is loaded */
 
-    /* Add editor directly to paned */
-    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
-
-    /* Create preview */
+    /* Create preview widget (single instance) */
     window_state.preview_widget = editor_preview_create();
     editor_preview_set_error_callback(on_preview_error, NULL);
 
@@ -771,7 +795,14 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.preview_widget, "realize",
                      G_CALLBACK(on_gl_realized), NULL);
 
-    gtk_paned_pack2(GTK_PANED(window_state.paned_widget), window_state.preview_widget, TRUE, TRUE);
+    /* Create container for preview in paned view */
+    window_state.preview_container_paned = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.preview_container_paned),
+                      window_state.preview_widget, TRUE, TRUE, 0);
+
+    /* Pack editor and preview container into paned */
+    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
+    gtk_paned_pack2(GTK_PANED(window_state.paned_widget), window_state.preview_container_paned, TRUE, TRUE);
 
     /* Add paned to stack */
     gtk_stack_add_named(GTK_STACK(window_state.view_stack), window_state.paned_widget, "paned");
@@ -791,9 +822,9 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
 
     gtk_box_pack_start(GTK_BOX(preview_fullscreen_vbox), window_state.notebook_fullscreen, FALSE, FALSE, 0);
 
-    /* Create second preview for fullscreen */
-    window_state.preview_fullscreen = editor_preview_create();
-    gtk_box_pack_start(GTK_BOX(preview_fullscreen_vbox), window_state.preview_fullscreen, TRUE, TRUE, 0);
+    /* Create container for preview in fullscreen view (preview will be reparented here) */
+    window_state.preview_container_fullscreen = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(preview_fullscreen_vbox), window_state.preview_container_fullscreen, TRUE, TRUE, 0);
 
     /* Add fullscreen layout to stack */
     gtk_stack_add_named(GTK_STACK(window_state.view_stack), preview_fullscreen_vbox, "preview");
