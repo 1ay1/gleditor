@@ -84,8 +84,11 @@ static struct {
     GtkWidget *view_stack;
     GtkWidget *notebook;
     GtkWidget *notebook_fullscreen;
+    GtkWidget *notebook_editor;
     GtkWidget *editor_vbox;
     GtkWidget *text_widget;
+    GtkWidget *text_container_paned;
+    GtkWidget *text_container_editor;
     GtkWidget *preview_widget;
     GtkWidget *preview_container_paned;
     GtkWidget *preview_container_fullscreen;
@@ -102,8 +105,11 @@ static struct {
     .view_stack = NULL,
     .notebook = NULL,
     .notebook_fullscreen = NULL,
+    .notebook_editor = NULL,
     .editor_vbox = NULL,
     .text_widget = NULL,
+    .text_container_paned = NULL,
+    .text_container_editor = NULL,
     .preview_widget = NULL,
     .preview_container_paned = NULL,
     .preview_container_fullscreen = NULL,
@@ -386,6 +392,18 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
 
     switch (mode) {
         case VIEW_MODE_BOTH:
+            /* Reparent editor to paned container */
+            if (gtk_widget_get_parent(window_state.text_widget) != window_state.text_container_paned) {
+                g_object_ref(window_state.text_widget);
+                GtkWidget *old_parent = gtk_widget_get_parent(window_state.text_widget);
+                if (old_parent) {
+                    gtk_container_remove(GTK_CONTAINER(old_parent), window_state.text_widget);
+                }
+                gtk_box_pack_start(GTK_BOX(window_state.text_container_paned),
+                                  window_state.text_widget, TRUE, TRUE, 0);
+                g_object_unref(window_state.text_widget);
+            }
+
             /* Reparent preview to paned container */
             if (gtk_widget_get_parent(window_state.preview_widget) != window_state.preview_container_paned) {
                 g_object_ref(window_state.preview_widget);
@@ -408,13 +426,24 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
             break;
 
         case VIEW_MODE_EDITOR_ONLY:
-            /* Show paned layout but hide preview */
-            gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "paned");
+            /* Reparent editor to fullscreen container */
+            if (gtk_widget_get_parent(window_state.text_widget) != window_state.text_container_editor) {
+                g_object_ref(window_state.text_widget);
+                GtkWidget *old_parent = gtk_widget_get_parent(window_state.text_widget);
+                if (old_parent) {
+                    gtk_container_remove(GTK_CONTAINER(old_parent), window_state.text_widget);
+                }
+                gtk_box_pack_start(GTK_BOX(window_state.text_container_editor),
+                                  window_state.text_widget, TRUE, TRUE, 0);
+                g_object_unref(window_state.text_widget);
+            }
+
+            /* Show editor fullscreen layout */
+            gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "editor");
             gtk_widget_show(window_state.text_widget);
-            gtk_widget_hide(window_state.preview_widget);
             /* Pause rendering when preview is hidden to save resources */
             editor_preview_set_paused(true);
-            editor_statusbar_set_message("Preview hidden - rendering paused");
+            editor_statusbar_set_message("Editor fullscreen with tabs");
             break;
 
         case VIEW_MODE_PREVIEW_ONLY:
@@ -795,17 +824,44 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.preview_widget, "realize",
                      G_CALLBACK(on_gl_realized), NULL);
 
+    /* Create container for editor in paned view */
+    window_state.text_container_paned = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.text_container_paned),
+                      window_state.text_widget, TRUE, TRUE, 0);
+
     /* Create container for preview in paned view */
     window_state.preview_container_paned = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_box_pack_start(GTK_BOX(window_state.preview_container_paned),
                       window_state.preview_widget, TRUE, TRUE, 0);
 
-    /* Pack editor and preview container into paned */
-    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
+    /* Pack editor and preview containers into paned */
+    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_container_paned, TRUE, TRUE);
     gtk_paned_pack2(GTK_PANED(window_state.paned_widget), window_state.preview_container_paned, TRUE, TRUE);
 
     /* Add paned to stack */
     gtk_stack_add_named(GTK_STACK(window_state.view_stack), window_state.paned_widget, "paned");
+
+    /* Create fullscreen editor layout (notebook + editor fullscreen) */
+    GtkWidget *editor_fullscreen_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Create notebook for editor fullscreen */
+    window_state.notebook_editor = gtk_notebook_new();
+    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(window_state.notebook_editor), TRUE);
+    gtk_notebook_set_scrollable(GTK_NOTEBOOK(window_state.notebook_editor), TRUE);
+
+    /* Bind notebook pages - they share the same underlying tab manager */
+    g_object_bind_property(window_state.notebook, "page",
+                          window_state.notebook_editor, "page",
+                          G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE);
+
+    gtk_box_pack_start(GTK_BOX(editor_fullscreen_vbox), window_state.notebook_editor, FALSE, FALSE, 0);
+
+    /* Create container for editor in fullscreen view (editor will be reparented here) */
+    window_state.text_container_editor = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_pack_start(GTK_BOX(editor_fullscreen_vbox), window_state.text_container_editor, TRUE, TRUE, 0);
+
+    /* Add editor fullscreen layout to stack */
+    gtk_stack_add_named(GTK_STACK(window_state.view_stack), editor_fullscreen_vbox, "editor");
 
     /* Create fullscreen preview layout (notebook + preview fullscreen) */
     GtkWidget *preview_fullscreen_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
