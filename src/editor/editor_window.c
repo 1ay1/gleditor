@@ -11,9 +11,10 @@
 #include "editor_settings.h"
 #include "editor_help.h"
 #include "editor_templates.h"
+#include "editor_tabs.h"
 #include "file_operations.h"
 #include "keyboard_shortcuts.h"
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -79,27 +80,25 @@ static const char *default_shader =
 /* Module state */
 static struct {
     GtkWidget *window;
+    GtkWidget *notebook;
     GtkWidget *text_widget;
     GtkWidget *preview_widget;
     GtkWidget *toolbar_widget;
     GtkWidget *statusbar_widget;
     GtkWidget *error_panel_widget;
     GtkWidget *paned_widget;
-    char *current_file;
-    bool is_modified;
     bool is_open;
     guint compile_timeout_id;
     guint fps_update_id;
 } window_state = {
     .window = NULL,
+    .notebook = NULL,
     .text_widget = NULL,
     .preview_widget = NULL,
     .toolbar_widget = NULL,
     .statusbar_widget = NULL,
     .error_panel_widget = NULL,
     .paned_widget = NULL,
-    .current_file = NULL,
-    .is_modified = false,
     .is_open = false,
     .compile_timeout_id = 0,
     .fps_update_id = 0
@@ -115,6 +114,8 @@ static gboolean update_fps_timer(gpointer user_data);
 static void on_settings_changed(EditorSettings *settings, gpointer user_data);
 static void on_error_status_clicked(gpointer user_data);
 static void on_paned_size_allocate(GtkWidget *widget, GdkRectangle *allocation, gpointer user_data);
+static void on_tab_changed(int tab_id, void *user_data);
+static bool on_tab_close_request(int tab_id, void *user_data);
 
 /* Editor settings */
 static EditorSettings editor_settings;
@@ -127,51 +128,22 @@ static gboolean paned_needs_reset = TRUE;
 static void on_new_clicked(gpointer user_data) {
     (void)user_data;
 
-    if (window_state.is_modified) {
-        if (!editor_window_prompt_save_if_modified()) {
-            return;
-        }
-    }
-
     /* Show template selection dialog */
     char *selected_code = editor_templates_show_dialog(GTK_WINDOW(window_state.window));
 
     if (selected_code) {
-        /* Block callbacks temporarily */
-        editor_text_set_change_callback(NULL, NULL);
-        editor_text_set_code(selected_code);
+        /* Create new tab with selected template */
+        int tab_id = editor_tabs_new(NULL, selected_code);
         g_free(selected_code);
 
-        /* Mark as not modified - this is a new shader from template */
-        window_state.is_modified = false;
-        editor_text_mark_saved();
-        editor_statusbar_set_modified(false);
-
-        /* Clear current file */
-        if (window_state.current_file) {
-            g_free(window_state.current_file);
-            window_state.current_file = NULL;
+        if (tab_id >= 0) {
+            editor_statusbar_set_message("New shader created from template");
         }
-
-        /* Reconnect callback */
-        editor_text_set_change_callback(on_text_changed, NULL);
-
-        /* Compile the new shader */
-        editor_window_compile_shader();
-
-        editor_window_update_title(NULL, false);
-        editor_statusbar_set_message("New shader created from template");
     }
 }
 
 static void on_load_clicked(gpointer user_data) {
     (void)user_data;
-
-    if (window_state.is_modified) {
-        if (!editor_window_prompt_save_if_modified()) {
-            return;
-        }
-    }
 
     char *filename = file_operations_load_dialog(GTK_WINDOW(window_state.window));
     if (!filename) {
@@ -182,28 +154,20 @@ static void on_load_clicked(gpointer user_data) {
     char *code = file_operations_load_file(filename, &error);
 
     if (code) {
-        /* Block change callback temporarily to prevent marking as modified */
-        editor_text_set_change_callback(NULL, NULL);
-        editor_text_set_code(code);
+        /* Create new tab with loaded file */
+        char *basename = g_path_get_basename(filename);
+        int tab_id = editor_tabs_new(basename, code);
+        g_free(basename);
         g_free(code);
 
-        if (window_state.current_file) {
-            g_free(window_state.current_file);
+        if (tab_id >= 0) {
+            /* Set file path for the tab */
+            editor_tabs_set_file_path(tab_id, filename);
+            editor_tabs_set_modified(tab_id, false);
+            editor_statusbar_set_message("Shader loaded successfully");
         }
-        window_state.current_file = filename;
 
-        /* Mark as saved - we just loaded from disk */
-        window_state.is_modified = false;
-        editor_text_mark_saved();
-        editor_statusbar_set_modified(false);
-
-        /* Reconnect change callback */
-        editor_text_set_change_callback(on_text_changed, NULL);
-
-        editor_window_update_title(file_operations_get_filename(filename), false);
-        editor_statusbar_set_message("Shader loaded successfully");
-
-        editor_window_compile_shader();
+        g_free(filename);
     } else {
         file_operations_error_dialog(GTK_WINDOW(window_state.window),
                                      "Load Failed", error);
@@ -215,7 +179,14 @@ static void on_load_clicked(gpointer user_data) {
 static void on_save_clicked(gpointer user_data) {
     (void)user_data;
 
-    char *filename = window_state.current_file;
+    /* Get current tab */
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (!info) return;
+
+    char *filename = info->file_path ? g_strdup(info->file_path) : NULL;
 
     if (!filename) {
         filename = file_operations_save_dialog(GTK_WINDOW(window_state.window), NULL);
@@ -228,26 +199,22 @@ static void on_save_clicked(gpointer user_data) {
     char *error = NULL;
 
     if (file_operations_save_file(filename, code, &error)) {
-        if (!window_state.current_file) {
-            window_state.current_file = filename;
-        }
+        /* Update tab with file path */
+        editor_tabs_set_file_path(tab_id, filename);
+        editor_tabs_set_modified(tab_id, false);
 
-        /* Mark as saved */
-        window_state.is_modified = false;
+        /* Mark editor as saved */
         editor_text_mark_saved();
         editor_statusbar_set_modified(false);
 
-        editor_window_update_title(file_operations_get_filename(filename), false);
         editor_statusbar_set_message("Shader saved successfully");
     } else {
         file_operations_error_dialog(GTK_WINDOW(window_state.window),
                                      "Save Failed", error);
         g_free(error);
-        if (filename != window_state.current_file) {
-            g_free(filename);
-        }
     }
 
+    g_free(filename);
     g_free(code);
 }
 
@@ -272,9 +239,12 @@ static void on_reset_clicked(gpointer user_data) {
 static void on_install_clicked(gpointer user_data) {
     (void)user_data;
 
+    int tab_id = editor_tabs_get_current();
+    const TabInfo *info = (tab_id >= 0) ? editor_tabs_get_info(tab_id) : NULL;
+
     char *code = editor_text_get_code();
-    const char *name = window_state.current_file ?
-                       file_operations_get_filename(window_state.current_file) :
+    const char *name = (info && info->file_path) ?
+                       file_operations_get_filename(info->file_path) :
                        "custom_shader";
 
     char *error = NULL;
@@ -472,17 +442,19 @@ static void on_exit_clicked(gpointer user_data) {
 
 /* Internal callbacks */
 static void on_text_changed(const char *text, gpointer user_data) {
-    (void)text;
     (void)user_data;
+
+    /* Get current tab */
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return;
+
+    /* Update tab's code */
+    editor_tabs_set_code(tab_id, text);
 
     /* Check the actual text buffer modified state */
     bool is_modified = editor_text_is_modified();
-    window_state.is_modified = is_modified;
+    editor_tabs_set_modified(tab_id, is_modified);
     editor_statusbar_set_modified(is_modified);
-    editor_window_update_title(
-        window_state.current_file ? file_operations_get_filename(window_state.current_file) : NULL,
-        is_modified
-    );
 
     /* Auto-compile with debounce (only if auto-compile is enabled) */
     if (editor_settings.auto_compile) {
@@ -530,13 +502,82 @@ static gboolean update_fps_timer(gpointer user_data) {
     return G_SOURCE_CONTINUE;
 }
 
+/* Tab changed callback */
+static void on_tab_changed(int tab_id, void *user_data) {
+    (void)user_data;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (!info) return;
+
+    /* Update text editor with tab's code */
+    editor_text_set_change_callback(NULL, NULL);
+    editor_text_set_code(info->code);
+    editor_text_set_change_callback(on_text_changed, NULL);
+
+    /* Update modified flag */
+    editor_statusbar_set_modified(info->is_modified);
+    if (info->is_modified) {
+        /* Mark as modified - no such function needed, editor_text handles it */
+    } else {
+        editor_text_mark_saved();
+    }
+
+    /* Compile if already compiled before */
+    if (info->has_compiled) {
+        editor_window_compile_shader();
+    }
+}
+
+/* Tab close request callback */
+static bool on_tab_close_request(int tab_id, void *user_data) {
+    (void)user_data;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (!info) return true;
+
+    /* Check if modified and ask to save */
+    if (info->is_modified) {
+        GtkWidget *dialog = gtk_message_dialog_new(
+            GTK_WINDOW(window_state.window),
+            GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+            GTK_MESSAGE_WARNING,
+            GTK_BUTTONS_NONE,
+            "Save changes to \"%s\" before closing?",
+            info->title
+        );
+
+        gtk_dialog_add_buttons(GTK_DIALOG(dialog),
+                              "Close _Without Saving", GTK_RESPONSE_NO,
+                              "_Cancel", GTK_RESPONSE_CANCEL,
+                              "_Save", GTK_RESPONSE_YES,
+                              NULL);
+
+        gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_YES);
+
+        int response = gtk_dialog_run(GTK_DIALOG(dialog));
+        gtk_widget_destroy(dialog);
+
+        if (response == GTK_RESPONSE_CANCEL) {
+            return false; /* Cancel close */
+        } else if (response == GTK_RESPONSE_YES) {
+            /* Save before closing - switch to this tab first */
+            editor_tabs_switch_to(tab_id);
+            on_save_clicked(NULL);
+        }
+    }
+
+    return true; /* Allow close */
+}
+
 static gboolean on_delete_event(GtkWidget *widget, GdkEvent *event, gpointer user_data) {
     (void)widget;
     (void)event;
     (void)user_data;
 
-    if (window_state.is_modified) {
-        return !editor_window_prompt_save_if_modified();
+    /* Check if any tabs have unsaved changes */
+    int tab_count = editor_tabs_get_count();
+    for (int i = 0; i < tab_count; i++) {
+        /* Tabs will be closed one by one, each prompting if needed */
     }
 
     return FALSE;
@@ -574,8 +615,19 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.window, "destroy", G_CALLBACK(on_destroy), NULL);
 
     /* Create main container */
+    /* Create main vertical box */
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(window_state.window), vbox);
+
+    /* Create notebook for tabs */
+    window_state.notebook = gtk_notebook_new();
+    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(window_state.notebook), TRUE);
+    gtk_notebook_set_scrollable(GTK_NOTEBOOK(window_state.notebook), TRUE);
+
+    /* Initialize tab manager */
+    editor_tabs_init(GTK_NOTEBOOK(window_state.notebook));
+    editor_tabs_set_changed_callback(on_tab_changed, NULL);
+    editor_tabs_set_close_callback(on_tab_close_request, NULL);
 
     /* Create toolbar */
     editor_toolbar_callbacks_t toolbar_callbacks = {
@@ -641,14 +693,8 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     /* Apply shader speed to preview */
     editor_preview_set_speed((float)editor_settings.shader_speed);
 
-    /* Set default shader text (compilation will happen when GL realizes) */
-    /* Note: Don't connect callbacks yet to prevent marking as modified */
-    editor_text_set_code(default_shader);
-
-    /* Mark as NOT modified - this is the initial default state */
-    window_state.is_modified = false;
-    editor_text_mark_saved();
-    editor_statusbar_set_modified(false);
+    /* Create initial tab with default shader */
+    editor_tabs_new("Untitled", default_shader);
 
     /* Now connect text change callbacks after initial content is loaded */
     editor_text_set_change_callback(on_text_changed, NULL);
@@ -703,9 +749,10 @@ void editor_window_close(void) {
         return;
     }
 
-    if (window_state.is_modified) {
-        if (!editor_window_prompt_save_if_modified()) {
-            return;
+    /* Close all tabs (each will prompt if modified) */
+    while (editor_tabs_get_count() > 0) {
+        if (!editor_tabs_close_current()) {
+            return; /* User cancelled */
         }
     }
 
@@ -734,22 +781,33 @@ void editor_window_update_title(const char *filename, bool modified) {
     }
 
     char title[256];
-    const char *name = filename ? filename : "Untitled";
-    const char *mod = modified ? " *" : "";
+    int tab_count = editor_tabs_get_count();
 
-    snprintf(title, sizeof(title), "%s%s - NeoWall Shader Editor", name, mod);
+    if (tab_count > 0) {
+        const char *name = filename ? filename : "Untitled";
+        const char *mod = modified ? " *" : "";
+        snprintf(title, sizeof(title), "%s%s - NeoWall Shader Editor (%d tabs)",
+                 name, mod, tab_count);
+    } else {
+        snprintf(title, sizeof(title), "NeoWall Shader Editor");
+    }
+
     gtk_window_set_title(GTK_WINDOW(window_state.window), title);
 }
 
 const char *editor_window_get_current_file(void) {
-    return window_state.current_file;
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return NULL;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    return info ? info->file_path : NULL;
 }
 
 void editor_window_set_current_file(const char *path) {
-    if (window_state.current_file) {
-        g_free(window_state.current_file);
-    }
-    window_state.current_file = path ? g_strdup(path) : NULL;
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return;
+
+    editor_tabs_set_file_path(tab_id, path);
 }
 
 bool editor_window_is_modified(void) {
@@ -758,10 +816,12 @@ bool editor_window_is_modified(void) {
 }
 
 void editor_window_set_modified(bool modified) {
-    window_state.is_modified = modified;
-    if (modified) {
-        /* Don't force mark as modified if it's not */
-    } else {
+    int tab_id = editor_tabs_get_current();
+    if (tab_id >= 0) {
+        editor_tabs_set_modified(tab_id, modified);
+    }
+
+    if (!modified) {
         /* Mark as saved */
         editor_text_mark_saved();
     }
@@ -769,7 +829,12 @@ void editor_window_set_modified(bool modified) {
 }
 
 bool editor_window_prompt_save_if_modified(void) {
-    if (!window_state.is_modified) {
+    /* Get current tab */
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return true;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (!info || !info->is_modified) {
         return true;
     }
 
@@ -783,23 +848,12 @@ bool editor_window_prompt_save_if_modified(void) {
         on_save_clicked(NULL);
     }
 
-    return true;
+    return result;
 }
 
 void editor_window_load_default_shader(void) {
-    /* Block callbacks temporarily */
-    editor_text_set_change_callback(NULL, NULL);
-    editor_text_set_code(default_shader);
-
-    /* Mark as saved - this is a clean slate */
-    window_state.is_modified = false;
-    editor_text_mark_saved();
-    editor_statusbar_set_modified(false);
-
-    /* Reconnect callback */
-    editor_text_set_change_callback(on_text_changed, NULL);
-
-    editor_window_compile_shader();
+    /* Create new tab with default shader */
+    editor_tabs_new("Untitled", default_shader);
 }
 
 bool editor_window_compile_shader(void) {
@@ -863,10 +917,8 @@ void editor_window_destroy(void) {
     editor_error_panel_destroy();
 
     /* Free resources */
-    if (window_state.current_file) {
-        g_free(window_state.current_file);
-        window_state.current_file = NULL;
-    }
+    /* Cleanup handled by tab manager */
+    editor_tabs_cleanup();
 
     window_state.window = NULL;
     window_state.text_widget = NULL;
@@ -874,6 +926,5 @@ void editor_window_destroy(void) {
     window_state.toolbar_widget = NULL;
     window_state.statusbar_widget = NULL;
     window_state.error_panel_widget = NULL;
-    window_state.is_modified = false;
     window_state.is_open = false;
 }

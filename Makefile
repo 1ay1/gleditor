@@ -178,6 +178,7 @@ EDITOR_SOURCES := $(EDITOR_DIR)/editor_text.c \
                   $(EDITOR_DIR)/glsl_completion.c \
                   $(EDITOR_DIR)/editor_help.c \
                   $(EDITOR_DIR)/editor_templates.c \
+                  $(EDITOR_DIR)/editor_tabs.c \
                   $(EDITOR_DIR)/keyboard_shortcuts.c
 
 # Main application sources
