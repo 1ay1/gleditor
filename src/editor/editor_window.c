@@ -376,18 +376,24 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
         case VIEW_MODE_BOTH:
             gtk_widget_show(window_state.text_widget);
             gtk_widget_show(window_state.preview_widget);
-            editor_statusbar_set_message("Showing both editor and preview");
+            /* Resume rendering when preview is visible */
+            editor_preview_set_paused(false);
+            editor_statusbar_set_message("Preview visible - rendering active");
             break;
 
         case VIEW_MODE_EDITOR_ONLY:
             gtk_widget_show(window_state.text_widget);
             gtk_widget_hide(window_state.preview_widget);
-            editor_statusbar_set_message("Editor only mode");
+            /* Pause rendering when preview is hidden to save resources */
+            editor_preview_set_paused(true);
+            editor_statusbar_set_message("Preview hidden - rendering paused");
             break;
 
         case VIEW_MODE_PREVIEW_ONLY:
             gtk_widget_hide(window_state.text_widget);
             gtk_widget_show(window_state.preview_widget);
+            /* Resume rendering when preview is visible */
+            editor_preview_set_paused(false);
             editor_statusbar_set_message("Preview only mode");
             break;
     }
