@@ -247,6 +247,23 @@ cd gleditor/bin
 
 ## 🔨 Building from Source
 
+### Build System Comparison
+
+gleditor supports **two build systems**. Choose based on your platform and preference:
+
+| Build System | Best For | Pros | Cons |
+|--------------|----------|------|------|
+| **Make** | Linux, quick builds | ✅ Fast (no configure step)<br/>✅ Simple commands<br/>✅ No CMake dependency<br/>✅ Traditional Unix workflow | ❌ Linux/macOS only<br/>❌ Less IDE integration |
+| **CMake** | Windows, macOS, cross-platform | ✅ Cross-platform<br/>✅ IDE support (CLion, VS Code)<br/>✅ Modern standard<br/>✅ Package manager friendly | ❌ Requires CMake<br/>❌ Slower (configure step) |
+
+**Recommendation:**
+- **Linux users:** Use Make for simplicity
+- **macOS users:** Use CMake (better toolchain integration)
+- **Windows users:** Use CMake (required)
+- **Contributors:** Test both to ensure they stay in sync
+
+---
+
 ### Using Make (Linux/macOS)
 
 ```bash

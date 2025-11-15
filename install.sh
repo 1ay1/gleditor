@@ -144,24 +144,59 @@ echo ""
 # Build the application
 echo -e "${BLUE}🔨 Building gleditor...${NC}"
 
-if [ -f "CMakeLists.txt" ]; then
-    # Use CMake if available
+# Choose best build system for platform
+if [ "$OS" == "linux" ]; then
+    # Linux: Prefer Make (faster, simpler)
+    if [ -f "Makefile" ]; then
+        echo -e "${GREEN}Using Make build system (optimized for Linux)${NC}"
+        make clean
+        make -j$(nproc 2>/dev/null || echo 2)
+    elif command_exists cmake; then
+        echo -e "${YELLOW}Makefile not found, using CMake${NC}"
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(nproc 2>/dev/null || echo 2)
+        cd ..
+    else
+        echo -e "${RED}❌ No build system found (need Make or CMake)${NC}"
+        exit 1
+    fi
+elif [ "$OS" == "macos" ]; then
+    # macOS: Prefer CMake (better cross-platform support)
+    if command_exists cmake; then
+        echo -e "${GREEN}Using CMake build system (recommended for macOS)${NC}"
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Release ..
+        make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 2)
+        cd ..
+    elif [ -f "Makefile" ]; then
+        echo -e "${YELLOW}CMake not found, using Make${NC}"
+        make clean
+        make -j$(sysctl -n hw.ncpu 2>/dev/null || echo 2)
+    else
+        echo -e "${RED}❌ No build system found${NC}"
+        echo -e "${YELLOW}Install CMake: brew install cmake${NC}"
+        exit 1
+    fi
+else
+    # Unknown OS: Try both
     if command_exists cmake; then
         echo -e "${GREEN}Using CMake build system${NC}"
         mkdir -p build
         cd build
         cmake -DCMAKE_BUILD_TYPE=Release ..
-        make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+        make -j2
         cd ..
-    else
-        echo -e "${YELLOW}CMake not found, falling back to Makefile${NC}"
+    elif [ -f "Makefile" ]; then
+        echo -e "${GREEN}Using Make build system${NC}"
         make clean
-        make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+        make -j2
+    else
+        echo -e "${RED}❌ No build system found${NC}"
+        exit 1
     fi
-else
-    # Use Makefile
-    make clean
-    make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
 fi
 
 if [ $? -ne 0 ]; then

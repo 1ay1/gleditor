@@ -136,6 +136,24 @@ The automated installer will:
 - ✅ Install system-wide
 - ✅ Set up desktop integration
 
+### Quick Build (No Install)
+
+Just want to build and run without installing?
+
+```bash
+# Linux/macOS
+./build.sh
+./bin/gleditor
+
+# Windows (Command Prompt)
+build.bat
+bin\gleditor.exe
+
+# Or with options
+./build.sh --debug --verbose
+./build.sh --clean --cmake
+```
+
 ### Platform-Specific Installation
 
 For detailed installation instructions including Windows, manual builds, and troubleshooting, see **[INSTALL.md](INSTALL.md)**.
@@ -326,6 +344,8 @@ gleditor/
 │   └── screenshot.png          # Screenshot
 ├── CMakeLists.txt              # CMake build system (cross-platform)
 ├── Makefile                    # Make build system (Unix)
+├── build.sh                    # Build script (Linux/macOS)
+├── build.bat                   # Build script (Windows)
 ├── install.sh                  # Automated installer (Linux/macOS)
 ├── install.bat                 # Automated installer (Windows)
 └── INSTALL.md                  # Detailed installation guide
@@ -333,23 +353,45 @@ gleditor/
 
 ### Building from Source
 
-See [INSTALL.md](INSTALL.md#building-from-source) for complete build instructions including:
-- Make-based builds (Linux/macOS)
-- CMake-based builds (all platforms)
-- Build options and flags
-- Cross-platform considerations
+gleditor supports **two build systems** - choose the one that fits your workflow:
 
-**Quick build:**
+#### Quick Build (Easiest)
 ```bash
-# Linux/macOS with Make
-make
-./bin/gleditor
+# Linux/macOS
+./build.sh              # Auto-selects best build system
+./bin/gleditor          # Run without installing
 
-# Any platform with CMake
+# Windows
+build.bat               # Builds with CMake/Make
+bin\gleditor.exe        # Run without installing
+
+# With options
+./build.sh --debug      # Debug build
+./build.sh --clean      # Clean build
+./build.sh --verbose    # Verbose output
+./build.sh --cmake      # Force CMake
+./build.sh --make       # Force Make
+```
+
+#### Option 1: Make (Recommended for Linux)
+```bash
+make
+sudo make install
+```
+**Pros:** Fast, simple, no CMake dependency  
+**Best for:** Quick Linux builds, traditional Unix workflow
+
+#### Option 2: CMake (Recommended for macOS/Windows)
+```bash
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
+sudo cmake --install .
 ```
+**Pros:** Cross-platform, IDE integration, modern standard  
+**Best for:** Windows, macOS, or if you need advanced features
+
+Both produce identical binaries. See [INSTALL.md](INSTALL.md#building-from-source) for detailed instructions.
 
 ### Contributing
 
