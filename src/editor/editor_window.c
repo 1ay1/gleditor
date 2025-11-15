@@ -522,9 +522,10 @@ static void on_tab_changed(int tab_id, void *user_data) {
         editor_text_mark_saved();
     }
 
-    /* Compile if already compiled before */
-    if (info->has_compiled) {
+    /* Auto-compile the shader for new tabs or recompile if already compiled before */
+    if (info->code && strlen(info->code) > 0) {
         editor_window_compile_shader();
+        editor_tabs_set_compiled(tab_id, true);
     }
 }
 
@@ -693,12 +694,12 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     /* Apply shader speed to preview */
     editor_preview_set_speed((float)editor_settings.shader_speed);
 
-    /* Create initial tab with default shader */
-    editor_tabs_new("Untitled", default_shader);
-
-    /* Now connect text change callbacks after initial content is loaded */
+    /* Connect text change callbacks before creating tabs */
     editor_text_set_change_callback(on_text_changed, NULL);
     editor_text_set_cursor_callback(on_cursor_moved, NULL);
+
+    /* Create initial tab with default shader */
+    editor_tabs_new("Untitled", default_shader);
 
     /* Initialize keyboard shortcuts */
     keyboard_shortcuts_callbacks_t shortcuts_callbacks = {
@@ -858,17 +859,28 @@ void editor_window_load_default_shader(void) {
 
 bool editor_window_compile_shader(void) {
     char *code = editor_text_get_code();
+
+    /* Safety check - ensure we have valid code to compile */
+    if (!code || strlen(code) == 0) {
+        g_free(code);
+        return false;
+    }
+
     bool success = editor_preview_compile_shader(code);
 
     if (success) {
         editor_statusbar_set_message("✓ Shader compiled successfully");
         /* Hide error panel on successful compilation */
         editor_error_panel_hide();
+
+        /* Mark current tab as compiled */
+        int tab_id = editor_tabs_get_current();
+        if (tab_id >= 0) {
+            editor_tabs_set_compiled(tab_id, true);
+        }
     } else {
         /* Show brief error in status bar - user can click to see details */
         editor_statusbar_set_error("❌ Compilation failed");
-
-        /* Don't show error panel automatically - only on status bar click */
     }
 
     g_free(code);
