@@ -207,6 +207,52 @@ static void on_save_clicked(gpointer user_data) {
         editor_text_mark_saved();
         editor_statusbar_set_modified(false);
 
+        /* Update window title */
+        editor_window_update_title(file_operations_get_filename(filename), false);
+
+        editor_statusbar_set_message("Shader saved successfully");
+    } else {
+        file_operations_error_dialog(GTK_WINDOW(window_state.window),
+                                     "Save Failed", error);
+        g_free(error);
+    }
+
+    g_free(filename);
+    g_free(code);
+}
+
+static void on_save_as_clicked(gpointer user_data) {
+    (void)user_data;
+
+    /* Get current tab */
+    int tab_id = editor_tabs_get_current();
+    if (tab_id < 0) return;
+
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (!info) return;
+
+    /* Always prompt for new filename (even if file already has a path) */
+    char *filename = file_operations_save_dialog(GTK_WINDOW(window_state.window),
+                                                  info->file_path);
+    if (!filename) {
+        return;
+    }
+
+    char *code = editor_text_get_code();
+    char *error = NULL;
+
+    if (file_operations_save_file(filename, code, &error)) {
+        /* Update tab with new file path */
+        editor_tabs_set_file_path(tab_id, filename);
+        editor_tabs_set_modified(tab_id, false);
+
+        /* Mark editor as saved */
+        editor_text_mark_saved();
+        editor_statusbar_set_modified(false);
+
+        /* Update window title */
+        editor_window_update_title(file_operations_get_filename(filename), false);
+
         editor_statusbar_set_message("Shader saved successfully");
     } else {
         file_operations_error_dialog(GTK_WINDOW(window_state.window),
@@ -221,6 +267,13 @@ static void on_save_clicked(gpointer user_data) {
 static void on_compile_clicked(gpointer user_data) {
     (void)user_data;
     editor_window_compile_shader();
+}
+
+static void on_close_tab_clicked(gpointer user_data) {
+    (void)user_data;
+
+    /* Close current tab (with prompt if modified) */
+    editor_tabs_close_current();
 }
 
 static void on_pause_clicked(gpointer user_data) {
@@ -456,6 +509,13 @@ static void on_text_changed(const char *text, gpointer user_data) {
     editor_tabs_set_modified(tab_id, is_modified);
     editor_statusbar_set_modified(is_modified);
 
+    /* Update window title */
+    const TabInfo *info = editor_tabs_get_info(tab_id);
+    if (info) {
+        const char *filename = info->file_path ? file_operations_get_filename(info->file_path) : info->title;
+        editor_window_update_title(filename, is_modified);
+    }
+
     /* Auto-compile with debounce (only if auto-compile is enabled) */
     if (editor_settings.auto_compile) {
         if (window_state.compile_timeout_id) {
@@ -521,6 +581,10 @@ static void on_tab_changed(int tab_id, void *user_data) {
     } else {
         editor_text_mark_saved();
     }
+
+    /* Update window title with current tab's file */
+    const char *filename = info->file_path ? file_operations_get_filename(info->file_path) : info->title;
+    editor_window_update_title(filename, info->is_modified);
 
     /* Auto-compile the shader for new tabs or recompile if already compiled before */
     if (info->code && strlen(info->code) > 0) {
@@ -720,8 +784,8 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
         .on_new = on_new_clicked,
         .on_open = on_load_clicked,
         .on_save = on_save_clicked,
-        .on_save_as = NULL,  /* TODO: Implement save as */
-        .on_close = on_new_clicked,  /* Close = New for now */
+        .on_save_as = on_save_as_clicked,
+        .on_close = on_close_tab_clicked,
         .on_exit = on_exit_clicked,
         .on_compile = on_compile_clicked,
         .on_toggle_error_panel = on_toggle_error_panel,
