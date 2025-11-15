@@ -111,7 +111,7 @@ Tab bar **always visible** for instant shader switching. No more hunting through
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="screenshot.png" alt="gleditor in action" width="100%"/>
+  <img src="data/screenshot.png" alt="gleditor in action" width="100%"/>
 </p>
 
 *Live shader editing with real-time preview, syntax highlighting, and multiple tabs. Retro vibes included.*
