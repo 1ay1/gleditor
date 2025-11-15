@@ -662,10 +662,19 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.paned_widget, "size-allocate",
                      G_CALLBACK(on_paned_size_allocate), NULL);
 
+    /* Create vertical box for text editor side (notebook + editor) */
+    GtkWidget *editor_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Add notebook to editor side */
+    gtk_box_pack_start(GTK_BOX(editor_vbox), window_state.notebook, FALSE, FALSE, 0);
+
     /* Create text editor with loaded settings */
     window_state.text_widget = editor_text_create(&editor_settings);
     /* Note: callbacks connected after initial content is loaded */
-    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
+    gtk_box_pack_start(GTK_BOX(editor_vbox), window_state.text_widget, TRUE, TRUE, 0);
+
+    /* Add editor side to paned */
+    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), editor_vbox, TRUE, TRUE);
 
     /* Create preview */
     window_state.preview_widget = editor_preview_create();
@@ -699,7 +708,12 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     editor_text_set_cursor_callback(on_cursor_moved, NULL);
 
     /* Create initial tab with default shader */
-    editor_tabs_new("Untitled", default_shader);
+    int initial_tab = editor_tabs_new("Untitled", default_shader);
+
+    /* Manually trigger tab changed callback since GTK doesn't fire switch-page for first tab */
+    if (initial_tab >= 0) {
+        on_tab_changed(initial_tab, NULL);
+    }
 
     /* Initialize keyboard shortcuts */
     keyboard_shortcuts_callbacks_t shortcuts_callbacks = {
