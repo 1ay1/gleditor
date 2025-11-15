@@ -1,521 +1,429 @@
 # gleditor 🎨✨
 
-**The Shader Editor That Actually Works™**
+<p align="center">
+  <img src="data/gleditor.svg" alt="gleditor" width="600"/>
+</p>
 
-A standalone OpenGL ES shader editor that doesn't make you want to flip your desk. Create, test, and install shaders for NeoWall without sacrificing your sanity.
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version"/>
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License"/>
+  <img src="https://img.shields.io/badge/OpenGL_ES-2.0%20%7C%203.0%20%7C%203.1%20%7C%203.2-orange" alt="OpenGL ES"/>
+  <img src="https://img.shields.io/badge/developer_sanity-barely_intact-red" alt="Sanity"/>
+</p>
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Sanity](https://img.shields.io/badge/developer_sanity-barely_intact-orange)
+<p align="center">
+  <strong>The Shader Editor That Actually Works™</strong>
+</p>
 
-## Why gleditor?
+<p align="center">
+  A standalone OpenGL ES shader editor that doesn't make you want to flip your desk.<br/>
+  Create, test, and debug GLSL shaders with real-time preview and syntax highlighting.<br/>
+  <em>Because life's too short to edit shaders in Notepad.</em>
+</p>
 
-Because editing shaders in Vim while your wallpaper crashes in the background is a form of masochism we're trying to eliminate. Also, we needed a catchy name.
+---
 
-## Features
+## 🤔 Why gleditor?
 
-- 🎨 **Live Preview** - See your shader in action before your GPU melts
-- 📝 **Syntax Highlighting** - Because reading plain text GLSL is like reading the Matrix
-- 🔧 **OpenGL ES Support** - We support ES 2.0, 3.0, 3.1, and 3.2 (yes, even the weird ones)
-- 🎯 **Shadertoy Compatible** - Copy-paste from Shadertoy and it just works* (*most of the time)
-- 💾 **Save/Load** - Revolutionary concept: actually save your work
-- 📦 **NeoWall Integration** - One-click install to NeoWall (no command line sorcery required)
-- ⚡ **Auto-Compile** - Types as you type. It's like autocomplete but more judgy
-- 🖱️ **Mouse Tracking** - Your shader can watch you work. Creepy? Maybe. Cool? Definitely.
-- 🟢 **Matrix Green FPS Counter** - Because everything looks more professional in #00FF41
+Let's be real: editing shaders shouldn't feel like debugging assembly code in the dark. We created **gleditor** because:
 
-## Screenshots
+- ✅ Vim + shader crashes in the background = **masochism** (we're eliminating that)
+- ✅ Copying from Shadertoy and praying it works = **not a workflow**
+- ✅ Recompiling every 5 seconds to see if your `vec3` is actually pink = **inefficient**
+- ✅ We needed a catchy name and "OpenGL_ES_Shader_Editor_v2_final_FINAL_actually_final.exe" was taken
 
+**gleditor** gives you a proper IDE for GLSL shaders with live preview, syntax highlighting, autocomplete, and a tab system that won't ghost you when you have 47 shaders open.
+
+---
+
+## ✨ Features That'll Make You Go "Finally!"
+
+### 🎨 **Live Preview**
+See your shader running in real-time. Watch your beautiful plasma effect... or your accidental white square of shame. Either way, **instant feedback**.
+
+### 📝 **GLSL Syntax Highlighting**
+Because reading plain text GLSL is like reading the Matrix. We colorize your `vec3`s, `uniform`s, and `mainImage()` so your eyes don't bleed.
+
+### 🔧 **OpenGL ES 2.0 / 3.0 / 3.1 / 3.2 Support**
+We support all the versions. Yes, even ES 3.2 with geometry shaders. Yes, we tested it. No, our GPU didn't explode (much).
+
+### 🎯 **Shadertoy Compatible**
+Copy shaders from [Shadertoy](https://www.shadertoy.com) and they **just work**\*. Full support for:
+- `iTime`, `iResolution`, `iMouse`
+- `mainImage()` entry point
+- Automatic uniform injection
+- *(\*99% of the time. That 1% is on you for using triple-nested raymarching.)*
+
+### 🗂️ **Multi-Tab Workflow**
+Open multiple shaders at once. Switch between them with ease. Close tabs without losing work. Revolutionary, we know.
+
+### 💾 **Save/Load Shaders**
+- **Ctrl+S** to save
+- **Ctrl+Shift+S** for Save As
+- **Ctrl+O** to load
+- Your work actually persists! What a concept!
+
+### 🚀 **Auto-Compile Mode**
+Enable auto-compile and watch your shader update **as you type**. It's like autocomplete but more judgy about your syntax errors.
+
+### 📦 **Template Library**
+Start with professionally crafted templates:
+- 🌌 **Cosmic Tunnel** - Trippy wormhole effects
+- 🌊 **Plasma** - Smooth animated gradients
+- 🎱 **Raymarching Sphere** - 3D rendering starter
+- 🔢 **Mandelbrot Set** - Infinite zoom fractals
+- 💧 **Water Ripples** - Interactive wave simulation
+- ✨ **Starfield** - Parallax space background
+- 🎨 **Gradient** - Simple color transitions
+- 📄 **Blank** - For the bold and the brave
+
+### ⌨️ **170+ Autocomplete Items**
+Type `mainI` → press **Tab** → get full Shadertoy template. We have keywords, functions, snippets, and all the GLSL built-ins you keep forgetting.
+
+### 🎮 **Interactive Mouse Tracking**
+Your shader gets `iMouse` uniform. Move your cursor, control the shader. Make interactive effects. Pretend you're a wizard.
+
+### 🟢 **FPS Counter in Matrix Green**
+Real-time performance monitoring at **#00FF41**. Because everything looks more professional in hacker green.
+
+### 🐛 **Error Panel with Line Numbers**
+Shader won't compile? We'll tell you **exactly** where you messed up (line 42, probably that missing semicolon).
+
+### 🎨 **Customizable Everything**
+- 12+ color themes (Solarized, Monokai, Dracula, you name it)
+- Font size and family
+- Tab width (2 or 4 spaces? We don't judge... much)
+- Line numbers, bracket matching, smart home/end
+- Split view orientation (horizontal or vertical)
+
+### 💾 **Session Persistence**
+Enable "Remember Open Tabs" and all your shaders will be there next time you open the app. Even unsaved ones. **Magic.**
+
+### 🖼️ **Three View Modes**
+- **Both**: Editor + Preview side-by-side
+- **Editor Only**: Fullscreen code editing (preview paused to save GPU)
+- **Preview Only**: Fullscreen shader preview (perfect for demos)
+
+Tab bar **always visible** for instant shader switching. No more hunting through menus.
+
+---
+
+## 📸 Screenshots
+
+<p align="center">
+  <img src="screenshot.png" alt="gleditor in action" width="100%"/>
+</p>
+
+*Live shader editing with real-time preview, syntax highlighting, and multiple tabs. Retro vibes included.*
+
+---
+
+## 🚀 Installation
+
+### Prerequisites
+
+You need:
+- **GTK+3** (for the GUI)
+- **GTKSourceView 4** (for syntax highlighting)
+- **OpenGL ES 2.0+** and **EGL** (for shader rendering)
+- **gcc** or compatible C compiler
+- **make**
+
+#### On Ubuntu/Debian:
+```bash
+sudo apt install build-essential libgtk-3-dev libgtksourceview-4-dev \
+                 libegl1-mesa-dev libgles2-mesa-dev
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ 🎨 gleditor                                            [_][□][X] │
-├─────────────────────────────────────────────────────────────────┤
-│ [🆕 New] [📂 Load] [💾 Save] │ [⚡ Compile] [⏸ Pause] │ [📦 Install to NeoWall] │    ⚡ FPS: 60   │
-├──────────────────────────┬──────────────────────────────────────┤
-│ 📝 Shader Code          │  👁️  Live Preview                    │
-│ ┌────────────────────┐  │  ┌──────────────────────────────┐   │
-│ │ void mainImage(... │  │  │                              │   │
-│ │ {                  │  │  │   [Rainbow vomit intensifies] │   │
-│ │   vec2 uv = ...    │  │  │                              │   │
-│ │   vec3 col = 0.5 + │  │  │   Your shader goes here!     │   │
-│ │     0.5 * cos(...  │  │  │                              │   │
-│ │   fragColor = ...  │  │  │   (hopefully without crashing)│   │
-│ │ }                  │  │  │                              │   │
-│ └────────────────────┘  │  └──────────────────────────────┘   │
-│ ✓ Compiled successfully │                                      │
-├──────────────────────────┴──────────────────────────────────────┤
-│ ✓ Ready to break things                      📍 Line 1, Col 1 │
-└─────────────────────────────────────────────────────────────────┘
+
+#### On Fedora/RHEL:
+```bash
+sudo dnf install gcc make gtk3-devel gtksourceview4-devel \
+                 mesa-libEGL-devel mesa-libGLESv2-devel
 ```
 
-*Actual interface is less ASCII and more GTK. We promise it's prettier.*
+#### On Arch Linux:
+```bash
+sudo pacman -S base-devel gtk3 gtksourceview4 mesa
+```
 
-## Requirements
-
-### Build Dependencies
-
-You'll need these before the compiler yells at you:
-
-- **GTK+3** (>= 3.20) - Because X11 is so 1990s
-- **GTKSourceView 4** - For that sweet syntax highlighting
-- **OpenGL ES 2.0** (minimum) - The ancient texts require this
-- **EGL** - For talking to your GPU without crying
-- **GCC** - Or any C compiler that doesn't judge you
-- **pkg-config** - The unsung hero of Linux development
-
-### Optional (but recommended if you want the fancy stuff)
-
-- OpenGL ES 3.0+ - For shaders that don't look like they're from 2005
-- OpenGL ES 3.1 - Compute shaders! (for when regular shaders aren't painful enough)
-- OpenGL ES 3.2 - Geometry and tessellation shaders (show-offs welcome)
-
-## Installation
-
-### The "I Know What I'm Doing" Route
+### Build & Install
 
 ```bash
+# Clone the repo
 git clone https://github.com/yourusername/gleditor.git
 cd gleditor
+
+# Build
 make
-./bin/gleditor  # 🎉
-```
 
-### The "Please Hold My Hand" Route
+# Install (optional)
+sudo make install
 
-**Step 1:** Install dependencies (aka "Feeding the Beast")
-
-**Debian/Ubuntu:**
-```bash
-sudo apt install build-essential pkg-config \
-    libgtk-3-dev libgtksourceview-4-dev \
-    libgles2-mesa-dev libegl1-mesa-dev
-```
-
-**Fedora:**
-```bash
-sudo dnf install gcc gtk3-devel gtksourceview4-devel \
-    mesa-libGLES-devel mesa-libEGL-devel
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S base-devel gtk3 gtksourceview4 mesa glu
-```
-
-*Note: If you use Arch, you probably already know this. You also probably told us.*
-
-**Step 2:** Build it (the exciting part)
-
-```bash
-make
-```
-
-If it works, you'll see a bunch of satisfying green text. If it doesn't, welcome to C development! Check the error messages (they're trying to help, we promise).
-
-**Step 3:** Run it
-
-```bash
+# Or just run from the build directory
 ./bin/gleditor
 ```
 
-**Step 4:** Install it system-wide (optional, for the brave)
+**That's it.** No CMake nightmares, no autotools archaeology, just a simple Makefile that works.
 
-```bash
-sudo make install
+---
+
+## 🎮 Usage
+
+### Basic Workflow
+
+1. **Launch gleditor**
+   ```bash
+   gleditor
+   ```
+
+2. **Create a new shader**
+   - Click **New** or press **Ctrl+N**
+   - Pick a template (or go blank if you're brave)
+
+3. **Write your shader**
+   - Use the Shadertoy `mainImage()` format
+   - Access `iTime`, `iResolution`, `iMouse` uniforms
+   - Watch the live preview update as you type (with auto-compile on)
+
+4. **Save your work**
+   - **Ctrl+S** to save
+   - **Ctrl+Shift+S** to save as
+
+5. **Install to NeoWall** (if applicable)
+   - Click the **Install** button
+   - Select shader type
+   - Your wallpaper just got 10x cooler
+
+### Keyboard Shortcuts (Because We're Not Animals)
+
+| Shortcut          | Action                                    |
+|-------------------|-------------------------------------------|
+| **Ctrl+N**        | New shader (template picker)              |
+| **Ctrl+O**        | Open shader file                          |
+| **Ctrl+S**        | Save current shader                       |
+| **Ctrl+Shift+S**  | Save As                                   |
+| **Ctrl+W**        | Close current tab                         |
+| **Ctrl+Q**        | Quit application                          |
+| **Ctrl+R**        | Recompile shader                          |
+| **Ctrl+Space**    | Trigger autocomplete                      |
+| **F5**            | Toggle Editor/Preview view                |
+| **F6**            | Toggle split orientation (H/V)            |
+| **Space**         | Pause/Resume animation                    |
+| **Tab**           | Indent selection                          |
+| **Shift+Tab**     | Un-indent selection                       |
+
+### Shadertoy Compatibility
+
+gleditor supports the standard Shadertoy uniforms:
+
+```glsl
+uniform vec3 iResolution;     // Viewport resolution (in pixels)
+uniform float iTime;          // Shader playback time (in seconds)
+uniform vec4 iMouse;          // Mouse pixel coords (xy: current, zw: click)
 ```
 
-Now you can just type `gleditor` from anywhere, like a boss.
-
-### Build Options (for the tinkerers)
-
-```bash
-make          # Build the thing
-make run      # Build and launch (one command to rule them all)
-make clean    # Remove build artifacts (fresh start therapy)
-make install  # Install to /usr/local/bin
-make debug    # Build with debug symbols (for when things go wrong)
-make info     # Display OpenGL ES detection info (nerd stats)
-make help     # Show all available commands (RTFM as a service)
-```
-
-## Usage
-
-### Starting the Editor
-
-```bash
-gleditor [OPTIONS]
-```
-
-**Options:**
-- `-v, --version` - Show version and OpenGL ES support (flex on your friends)
-- `-V, --verbose` - Enable verbose output (for debugging or feeling important)
-- `-h, --help` - Show help message (no shame in asking)
-
-### Creating a Shader (The Fun Part)
-
-1. **Start with the default template** - It's a rainbow gradient. Very web 2.0.
-2. **Edit the shader** in the left pane - Try not to divide by zero
-3. **Watch the live preview** in the right pane - If it crashes, it's a feature
-4. Shaders auto-compile as you type (500ms debounce, because we're not monsters)
-
-### Shader Format (Important Stuff)
-
-gleditor uses **Shadertoy-compatible** format. This means you can steal... err, *borrow* shaders from Shadertoy:
+**Example Shadertoy shader:**
 
 ```glsl
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    // Your artistic vision goes here
+    // Normalize coordinates to [0, 1]
     vec2 uv = fragCoord / iResolution.xy;
     
-    // Make it move (because static wallpapers are boring)
+    // Animated gradient
     vec3 col = 0.5 + 0.5 * cos(iTime + uv.xyx + vec3(0, 2, 4));
     
-    // Output to screen (the moment of truth)
     fragColor = vec4(col, 1.0);
 }
 ```
 
-### Available Uniforms (The Magic Variables)
+Copy this into gleditor, hit Compile (or enable auto-compile), and watch the rainbow magic happen.
 
-These are provided automatically, like a shader fairy godmother:
+---
 
-- `vec3 iResolution` - Viewport resolution (width, height, aspect ratio)
-- `float iTime` - Shader playback time in seconds (keeps counting forever)
-- `float iTimeDelta` - Time since last frame (for the physics nerds)
-- `int iFrame` - Frame number (in case you're counting)
-- `vec4 iMouse` - Mouse position (x, y, click_x, click_y)
+## ⚙️ Settings
 
-### Saving and Loading (Don't Lose Your Work!)
+Access via **Settings** button or menu. Configure:
 
-- **💾 Save** - Saves your shader to a `.glsl` file
-- **📂 Load** - Loads a shader from disk
-- **🆕 New** - Reset to default template (with confirmation, we're not savages)
+### Appearance
+- **Theme**: 12+ color schemes (Solarized Light/Dark, Monokai, Dracula, etc.)
+- **Font**: Family and size
+- **Line Numbers**: Show/hide
+- **Current Line Highlight**: Enable/disable
+- **Background Pattern**: Subtle grid for code alignment
 
-⚠️ **Important:** No autosave! Save your work or weep later.
+### Behavior
+- **Tab Width**: 2, 4, or 8 spaces
+- **Auto-Indent**: Automatically indent new lines
+- **Smart Home/End**: Home key jumps to first non-whitespace
+- **Bracket Matching**: Highlight matching `()`, `{}`, `[]`
+- **Auto-Completion**: Enable/disable GLSL autocomplete
 
-### Installing to NeoWall (The Whole Point)
+### Compilation
+- **Auto-Compile**: Compile shader as you type (slight delay)
+- **Shader Speed**: Time multiplier (1.0 = normal, 2.0 = 2x speed)
 
-1. Click **📦 Install to NeoWall**
-2. Enter a shader name (be creative, but also descriptive)
-3. Your shader magically appears in `~/.config/neowall/shaders/`
-4. Configure NeoWall to use your shader
-5. Enjoy your animated wallpaper
-6. Tell everyone you made it
+### Session
+- **Remember Open Tabs**: Restore tabs on restart (saves to `~/.config/gleditor/tabs_session.ini`)
 
-### Controls (Buttons That Do Things)
+All settings auto-save to `~/.config/gleditor/settings.conf`.
 
-**Toolbar:**
-- **🆕 New** - Fresh start (goodbye mistakes)
-- **📂 Load** - Load a shader file (remember where you saved it)
-- **💾 Save** - Save your masterpiece (do this often)
-- **⚡ Compile** - Manually recompile (for when auto-compile is too slow)
-- **⏸ Pause** - Freeze the animation (for screenshots or debugging)
-- **📦 Install to NeoWall** - One-click deployment (feel like a DevOps engineer)
+---
 
-**Preview Interactions:**
-- **Mouse movement** - Updates `iMouse` uniform (make interactive shaders!)
-- **Pause button** - Stops time (eat your heart out, Doctor Who)
+## 🐛 Debugging
 
-## Project Structure (For the Curious)
+### Shader Won't Compile?
+
+1. **Check the Error Panel** (click the error icon in status bar)
+   - Line numbers provided
+   - Actual OpenGL error messages (not encrypted)
+
+2. **Common Issues:**
+   - Missing semicolons (classic)
+   - Undeclared variables
+   - Type mismatches (`float` vs `int`)
+   - GLSL version issues (ES 2.0 vs 3.0 syntax)
+
+3. **Enable Verbose Output:**
+   ```bash
+   gleditor --verbose
+   ```
+
+### Performance Issues?
+
+- Lower shader complexity (raymarching = GPU torture)
+- Check FPS counter (bottom right)
+- Disable auto-compile if typing is laggy
+- Pause preview when coding (saves GPU cycles)
+
+### Crashes?
+
+First, check if it's your shader or the editor:
+1. Try a simple shader (gradient template)
+2. If that works, your shader might be doing evil things (infinite loops, divide by zero, etc.)
+3. If simple shaders crash, file a bug report with your GPU info
+
+---
+
+## 🔧 Development
+
+### Project Structure
 
 ```
 gleditor/
 ├── src/
-│   ├── main.c                  # Application entry point (the beginning)
-│   ├── shader_editor.c         # Where the magic happens (5000+ lines of pain)
-│   ├── shader_editor.h         # Header file (because C requires it)
-│   └── shader_lib/            # Shader compilation library (the serious stuff)
-│       ├── neowall_shader_api.c    # High-level API
-│       ├── neowall_shader_api.h
-│       ├── shader.h                # Core shader definitions
-│       ├── shader_core.c           # Compilation engine
-│       ├── shadertoy_compat.c      # Shadertoy wrapper
-│       ├── shadertoy_compat.h
-│       ├── shader_adaptation.c     # ES version adaptation
-│       └── shader_log.h            # Logging utilities
-├── Makefile                   # Build system (reads your mind)
-├── README.md                  # You are here
-└── .gitignore                 # Files we pretend don't exist
+│   ├── main.c                  # Entry point
+│   ├── shader_editor.h         # Main editor API
+│   ├── editor/                 # Editor components
+│   │   ├── editor_window.c     # Main window & layout
+│   │   ├── editor_text.c       # Code editor (GTKSourceView)
+│   │   ├── editor_preview.c    # OpenGL preview widget
+│   │   ├── editor_toolbar.c    # Toolbar buttons
+│   │   ├── editor_statusbar.c  # Status bar (FPS, errors, etc.)
+│   │   ├── editor_settings.c   # Settings dialog & persistence
+│   │   ├── editor_tabs.c       # Tab manager
+│   │   ├── editor_templates.c  # Shader template library
+│   │   ├── glsl_completion.c   # Autocomplete provider
+│   │   └── ...
+│   └── shader_lib/             # Shader runtime & API
+│       ├── neowall_shader_api.c
+│       └── shader_core.c
+├── data/
+│   └── gleditor.svg            # Logo
+└── Makefile                    # Build system
 ```
 
-## OpenGL ES Version Detection (Nerd Section)
-
-The Makefile automatically detects what OpenGL ES versions you have:
+### Building from Source
 
 ```bash
-make info
+make clean
+make
+./bin/gleditor
 ```
-
-**Sample Output:**
-```
-============================================
-gleditor v1.0.0 - Shader Editor
-============================================
-
-OpenGL ES / EGL Support:
-  EGL: Yes (version 1.5)
-  OpenGL ES 1.x: No (and you don't need it)
-  OpenGL ES 2.0: Yes (the minimum requirement)
-  OpenGL ES 3.0: Yes (getting fancy!)
-  OpenGL ES 3.1: Yes (compute shaders unlocked)
-  OpenGL ES 3.2: No (maybe next GPU)
-
-Dependencies:
-  GTK+3: Yes
-  GTKSourceView 4: Yes
-
-Build Configuration:
-  CC: gcc
-  PREFIX: /usr/local
-```
-
-## Troubleshooting (When Things Go Wrong)
-
-### "OpenGL ES 2.0 not found"
-
-**Translation:** Your system is missing OpenGL ES libraries.
-
-**Fix:**
-```bash
-# Debian/Ubuntu
-sudo apt install libgles2-mesa-dev libegl1-mesa-dev
-
-# Fedora
-sudo dnf install mesa-libGLES-devel mesa-libEGL-devel
-
-# Arch
-sudo pacman -S mesa
-```
-
-### "GTK or GTKSourceView not found"
-
-**Translation:** Missing GUI libraries.
-
-**Fix:**
-```bash
-# Debian/Ubuntu
-sudo apt install libgtk-3-dev libgtksourceview-4-dev
-
-# Fedora
-sudo dnf install gtk3-devel gtksourceview4-devel
-
-# Arch
-sudo pacman -S gtk3 gtksourceview4
-```
-
-### "Shader compilation errors"
-
-**Possible causes:**
-1. You divided by zero (classic mistake)
-2. Typo in variable name (GLSL is case-sensitive)
-3. Missing semicolon (yes, in 2025)
-4. Forgot to declare a variable (shader compiler is strict)
-
-**What to do:**
-- Check the error message below the editor (it has line numbers!)
-- Make sure your shader follows Shadertoy format
-- Use `void mainImage(out vec4 fragColor, in vec2 fragCoord)`
-- Remember: GLSL is not JavaScript. Types matter.
-
-### "Preview not updating"
-
-**Checklist:**
-- [ ] Did the shader compile? (check for green checkmark)
-- [ ] Is the animation paused? (click the pause button)
-- [ ] Is your GPU on fire? (check temperature)
-
-### "Performance issues / Low FPS"
-
-**Solutions:**
-- Simplify your shader (fewer operations = happier GPU)
-- Reduce preview window size (less pixels = faster rendering)
-- Lower iteration counts in loops (nobody needs 1000 iterations)
-- Check if your shader has infinite loops (narrator: it probably does)
-
-## Development (Join the Chaos)
-
-### Building with Debug Symbols
-
-```bash
-make debug
-gdb ./bin/gleditor
-```
-
-### Code Style (Guidelines We Sometimes Follow)
-
-- **Indentation:** 4 spaces (tabs are a lie)
-- **Brace style:** K&R (the one true style)
-- **Line length:** 100 characters max (readability matters)
-- **Comments:** More is better (your future self will thank you)
-- **Variable names:** Descriptive (no `int x;` unless it's coordinates)
 
 ### Contributing
 
-1. Fork the repository (button in top right)
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes (try not to break everything)
-4. Test thoroughly (yes, actually test it)
-5. Commit with descriptive messages (no "fixed stuff")
-6. Push to your fork (`git push origin feature/amazing-feature`)
-7. Open a Pull Request (describe what you did and why)
+PRs welcome! Please:
+- Keep code style consistent (see existing files)
+- Test on your platform before submitting
+- Add comments for non-obvious logic
+- Update README if adding features
 
-## Architecture (For the Deeply Curious)
+### Debugging Build Issues
 
-### Shader Compilation Pipeline
+```bash
+# See full compilation commands
+make V=1
 
+# Check dependencies
+pkg-config --modversion gtk+-3.0
+pkg-config --modversion gtksourceview-4
+pkg-config --modversion egl
+
+# Check OpenGL ES support
+ls /usr/include/GLES2/
+ls /usr/include/GLES3/
 ```
-User GLSL Code
-     ↓
-shader_core.c (detect format - is it Shadertoy?)
-     ↓
-shadertoy_compat.c (wrap if needed - add uniforms and boilerplate)
-     ↓
-shader_adaptation.c (adapt for ES2/ES3 - version compatibility)
-     ↓
-neowall_shader_api.c (compile - pray to the GPU gods)
-     ↓
-OpenGL Program (success!) or Error Messages (sadness)
-```
-
-### Components (What Does What)
-
-- **shader_editor.c** - GTK UI and OpenGL rendering (the frontend)
-- **shader_core.c** - Core shader compilation logic (the backend)
-- **shadertoy_compat.c** - Wraps Shadertoy format (the adapter)
-- **shader_adaptation.c** - ES version compatibility (the diplomat)
-- **neowall_shader_api.c** - High-level API (the interface)
-
-## Keyboard Shortcuts (For the Efficiency Addicts)
-
-*Coming soon! Or use the mouse, we won't judge.*
-
-## Fun Facts
-
-- This editor was built because editing shaders in Nano was driving someone insane
-- The matrix green theme is mandatory (it's not a phase, mom)
-- The FPS counter updates 60 times per second (very meta)
-- Auto-compile has a 500ms debounce (we value your CPU)
-- The preview starts with a rainbow gradient (because why not?)
-
-## License
-
-MIT License - Do whatever you want with this code. Break it, fix it, make it better. We believe in you!
-
-## Credits
-
-- **NeoWall Project** - The reason this exists
-- **Shadertoy** - For the shader format and inspiration
-- **GTK** - For making GUIs possible without crying
-- **GTKSourceView** - For syntax highlighting magic
-- **Coffee** - For making this project possible
-- **You** - For actually reading this README
-
-## Links
-
-- **NeoWall:** [github.com/yourusername/neowall](https://github.com/yourusername/neowall)
-- **Shadertoy:** [shadertoy.com](https://www.shadertoy.com)
-- **Issue Tracker:** [github.com/yourusername/gleditor/issues](https://github.com/yourusername/gleditor/issues)
-- **Bug Reports:** Same as above (we know there are bugs)
-
-## Example Shaders (To Get You Started)
-
-### Simple Gradient (Baby's First Shader)
-
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / iResolution.xy;
-    fragColor = vec4(uv, 0.5 + 0.5 * sin(iTime), 1.0);
-}
-```
-
-### Animated Circle (Getting Fancy)
-
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    // Center and normalize coordinates
-    vec2 uv = (fragCoord - 0.5 * iResolution.xy) / iResolution.y;
-    
-    // Distance from center
-    float d = length(uv);
-    
-    // Animated circle with smooth edges
-    float c = smoothstep(0.3, 0.29, d);
-    
-    // Color based on time
-    vec3 col = vec3(c) * (0.5 + 0.5 * cos(iTime + vec3(0, 2, 4)));
-    
-    fragColor = vec4(col, 1.0);
-}
-```
-
-### Plasma Effect (Now We're Talking)
-
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / iResolution.xy;
-    float t = iTime * 0.5;
-    
-    // Multiple sine waves create plasma effect
-    float c = sin(uv.x * 10.0 + t);
-    c += sin(uv.y * 10.0 + t);
-    c += sin((uv.x + uv.y) * 10.0 + t);
-    c += sin(length(uv - 0.5) * 20.0 + t);
-    
-    // Color mapping
-    vec3 col = vec3(0.5, 0.3, 0.8) + 0.5 * cos(c + vec3(0, 1, 2));
-    fragColor = vec4(col, 1.0);
-}
-```
-
-### Starfield (For the Space Enthusiasts)
-
-```glsl
-void mainImage(out vec4 fragColor, in vec2 fragCoord) {
-    vec2 uv = fragCoord / iResolution.xy;
-    uv -= 0.5;  // Center
-    uv.x *= iResolution.x / iResolution.y;  // Aspect ratio correction
-    
-    float stars = 0.0;
-    for (float i = 0.0; i < 50.0; i++) {
-        vec2 pos = vec2(
-            sin(i * 12.345) * 0.5,
-            cos(i * 45.678) * 0.5
-        );
-        
-        float dist = length(uv - pos);
-        stars += 0.001 / (dist * dist);
-    }
-    
-    vec3 col = vec3(stars);
-    fragColor = vec4(col, 1.0);
-}
-```
-
-## FAQ (Frequently Asked Questions)
-
-**Q: Why "gleditor"?**  
-A: Because "OpenGL ES Shader Editor" was too long, and "ShaderThing" was taken.
-
-**Q: Will this work on Windows?**  
-A: Probably not out of the box. But WSL exists, and that's close enough!
-
-**Q: Can I use this for game development?**  
-A: Sure! It's designed for wallpapers, but shaders are shaders.
-
-**Q: Why matrix green everywhere?**  
-A: Because we can. Also, it looks cool at 2 AM.
-
-**Q: My shader makes the preview window go black. Is this broken?**  
-A: No, your shader is probably broken. Check for compilation errors.
-
-**Q: Can I contribute?**  
-A: Please do! We need all the help we can get.
-
-**Q: Is there a dark mode?**  
-A: Everything is dark mode if you close your eyes.
 
 ---
 
-**Happy Shader Coding! May your gradients be smooth and your FPS be high.** 🎨✨🚀
+## 📜 License
 
-*Built with ❤️ and way too much caffeine*
+**MIT License** - See [LICENSE](LICENSE) file for details.
+
+TL;DR: Use it, modify it, sell it, just don't sue us if your GPU catches fire.
+
+---
+
+## 🙏 Acknowledgments
+
+- **GTK Project** - For the GUI toolkit
+- **GTKSourceView** - For syntax highlighting magic
+- **Shadertoy** - For inspiring a generation of shader wizards
+- **Our GPUs** - For not dying during development (mostly)
+- **Coffee** - The real MVP
+
+---
+
+## 🆘 Support & Contact
+
+- **Bug Reports**: [GitHub Issues](https://github.com/yourusername/gleditor/issues)
+- **Feature Requests**: Also GitHub Issues (tag as enhancement)
+- **Questions**: GitHub Discussions or open an issue
+
+---
+
+## 🎯 Roadmap (Maybe?)
+
+Future features we're considering (no promises):
+
+- [ ] Cross-platform support (Windows, macOS)
+- [ ] Shader export to various formats
+- [ ] Multi-pass rendering
+- [ ] Texture/image inputs
+- [ ] Video export (render to mp4)
+- [ ] Plugin system
+- [ ] Cloud shader library
+- [ ] AI-powered shader generation (kidding... unless? 👀)
+
+---
+
+## 💡 Tips & Tricks
+
+1. **Use Ctrl+Space liberally** - 170+ autocomplete items await you
+2. **Enable auto-compile** - Instant feedback = faster iteration
+3. **Start with templates** - Don't reinvent the wheel (or the plasma effect)
+4. **Watch the FPS counter** - If it drops below 30, your shader might be too ambitious
+5. **Split view vertically on ultrawide** - More code visible at once
+6. **Use F5 to toggle views** - Quick preview fullscreen
+7. **Save often** - Ctrl+S is muscle memory for a reason
+8. **Read OpenGL errors carefully** - They're cryptic but not malicious
+
+---
+
+<p align="center">
+  Made with ❤️, ☕, and a questionable amount of <code>vec3</code>s
+</p>
+
+<p align="center">
+  <em>gleditor - Because your shaders deserve better than Notepad</em>
+</p>
