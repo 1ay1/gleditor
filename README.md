@@ -7,6 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="Version"/>
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License"/>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Platform"/>
   <img src="https://img.shields.io/badge/OpenGL_ES-2.0%20%7C%203.0%20%7C%203.1%20%7C%203.2-orange" alt="OpenGL ES"/>
   <img src="https://img.shields.io/badge/developer_sanity-barely_intact-red" alt="Sanity"/>
 </p>
@@ -120,50 +121,39 @@ Tab bar **always visible** for instant shader switching. No more hunting through
 
 ## 🚀 Installation
 
-### Prerequisites
-
-You need:
-- **GTK+3** (for the GUI)
-- **GTKSourceView 4** (for syntax highlighting)
-- **OpenGL ES 2.0+** and **EGL** (for shader rendering)
-- **gcc** or compatible C compiler
-- **make**
-
-#### On Ubuntu/Debian:
-```bash
-sudo apt install build-essential libgtk-3-dev libgtksourceview-4-dev \
-                 libegl1-mesa-dev libgles2-mesa-dev
-```
-
-#### On Fedora/RHEL:
-```bash
-sudo dnf install gcc make gtk3-devel gtksourceview4-devel \
-                 mesa-libEGL-devel mesa-libGLESv2-devel
-```
-
-#### On Arch Linux:
-```bash
-sudo pacman -S base-devel gtk3 gtksourceview4 mesa
-```
-
-### Build & Install
+### Quick Install (Linux/macOS)
 
 ```bash
-# Clone the repo
 git clone https://github.com/yourusername/gleditor.git
 cd gleditor
-
-# Build
-make
-
-# Install (optional)
-sudo make install
-
-# Or just run from the build directory
-./bin/gleditor
+./install.sh
 ```
 
-**That's it.** No CMake nightmares, no autotools archaeology, just a simple Makefile that works.
+The automated installer will:
+- ✅ Detect your OS and package manager
+- ✅ Install all required dependencies
+- ✅ Build the application
+- ✅ Install system-wide
+- ✅ Set up desktop integration
+
+### Platform-Specific Installation
+
+For detailed installation instructions including Windows, manual builds, and troubleshooting, see **[INSTALL.md](INSTALL.md)**.
+
+**Quick links:**
+- 🐧 [Linux Installation](INSTALL.md#linux-installation)
+- 🍎 [macOS Installation](INSTALL.md#macos-installation)
+- 🪟 [Windows Installation](INSTALL.md#windows-installation)
+- 🔨 [Building from Source](INSTALL.md#building-from-source)
+- 🐛 [Troubleshooting](INSTALL.md#troubleshooting)
+
+### Requirements
+
+- **GTK+3** (>= 3.20)
+- **GTKSourceView 4**
+- **OpenGL ES 2.0+** / **OpenGL** (platform-dependent)
+- **C compiler** (GCC, Clang, or MSVC)
+- **CMake** or **Make**
 
 ---
 
@@ -327,17 +317,38 @@ gleditor/
 │   └── shader_lib/             # Shader runtime & API
 │       ├── neowall_shader_api.c
 │       └── shader_core.c
+├── include/
+│   └── platform_compat.h       # Cross-platform compatibility layer
 ├── data/
-│   └── gleditor.svg            # Logo
-└── Makefile                    # Build system
+│   ├── gleditor.svg            # Logo
+│   ├── icon.svg                # Application icon
+│   ├── gleditor.desktop        # Linux desktop entry
+│   └── screenshot.png          # Screenshot
+├── CMakeLists.txt              # CMake build system (cross-platform)
+├── Makefile                    # Make build system (Unix)
+├── install.sh                  # Automated installer (Linux/macOS)
+├── install.bat                 # Automated installer (Windows)
+└── INSTALL.md                  # Detailed installation guide
 ```
 
 ### Building from Source
 
+See [INSTALL.md](INSTALL.md#building-from-source) for complete build instructions including:
+- Make-based builds (Linux/macOS)
+- CMake-based builds (all platforms)
+- Build options and flags
+- Cross-platform considerations
+
+**Quick build:**
 ```bash
-make clean
+# Linux/macOS with Make
 make
 ./bin/gleditor
+
+# Any platform with CMake
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
 ```
 
 ### Contributing
@@ -392,17 +403,21 @@ TL;DR: Use it, modify it, sell it, just don't sue us if your GPU catches fire.
 
 ---
 
-## 🎯 Roadmap (Maybe?)
+## 🎯 Roadmap
 
 Future features we're considering (no promises):
 
-- [ ] Cross-platform support (Windows, macOS)
+- [x] Cross-platform support (Linux, macOS, Windows)
+- [x] CMake build system
+- [x] Automated installers
 - [ ] Shader export to various formats
 - [ ] Multi-pass rendering
 - [ ] Texture/image inputs
 - [ ] Video export (render to mp4)
 - [ ] Plugin system
 - [ ] Cloud shader library
+- [ ] Package managers (apt, homebrew, chocolatey)
+- [ ] AppImage / Flatpak / Snap (Linux)
 - [ ] AI-powered shader generation (kidding... unless? 👀)
 
 ---

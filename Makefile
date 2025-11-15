@@ -144,6 +144,9 @@ else
     $(info OpenGL ES 3.2 not found (optional))
 endif
 
+# Add include directory for platform compatibility
+CFLAGS += -I$(CURDIR)/include
+
 # Add GTK and GTKSourceView flags
 CFLAGS += $(GTK_CFLAGS) $(GTKSOURCE_CFLAGS)
 LIBS += $(GTK_LIBS) $(GTKSOURCE_LIBS)

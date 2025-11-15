@@ -1,0 +1,18 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=gleditor
+GenericName=Shader Editor
+Comment=OpenGL ES shader editor with live preview
+Exec=gleditor %F
+Icon=gleditor
+Terminal=false
+Categories=Development;Graphics;GTK;
+MimeType=text/x-glsl;text/plain;
+Keywords=shader;glsl;opengl;graphics;editor;
+
+Actions=NewShader;
+
+[Desktop Action NewShader]
+Name=New Shader
+Exec=gleditor --new
