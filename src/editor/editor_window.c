@@ -7,12 +7,13 @@
 #include "editor_preview.h"
 #include "editor_toolbar.h"
 #include "editor_statusbar.h"
-#include "editor_settings.h"
 #include "editor_error_panel.h"
+#include "editor_settings.h"
 #include "editor_help.h"
-#include "keyboard_shortcuts.h"
+#include "editor_templates.h"
 #include "file_operations.h"
-#include <stdio.h>
+#include "keyboard_shortcuts.h"
+#include <string.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -121,8 +122,8 @@ static EditorSettings editor_settings;
 /* Flag to track if paned position needs to be reset to 50/50 */
 static gboolean paned_needs_reset = TRUE;
 
+/* Callback implementations */
 
-/* Toolbar callbacks */
 static void on_new_clicked(gpointer user_data) {
     (void)user_data;
 
@@ -132,19 +133,35 @@ static void on_new_clicked(gpointer user_data) {
         }
     }
 
-    editor_window_load_default_shader();
+    /* Show template selection dialog */
+    char *selected_code = editor_templates_show_dialog(GTK_WINDOW(window_state.window));
 
-    if (window_state.current_file) {
-        g_free(window_state.current_file);
-        window_state.current_file = NULL;
+    if (selected_code) {
+        /* Block callbacks temporarily */
+        editor_text_set_change_callback(NULL, NULL);
+        editor_text_set_code(selected_code);
+        g_free(selected_code);
+
+        /* Mark as not modified - this is a new shader from template */
+        window_state.is_modified = false;
+        editor_text_mark_saved();
+        editor_statusbar_set_modified(false);
+
+        /* Clear current file */
+        if (window_state.current_file) {
+            g_free(window_state.current_file);
+            window_state.current_file = NULL;
+        }
+
+        /* Reconnect callback */
+        editor_text_set_change_callback(on_text_changed, NULL);
+
+        /* Compile the new shader */
+        editor_window_compile_shader();
+
+        editor_window_update_title(NULL, false);
+        editor_statusbar_set_message("New shader created from template");
     }
-
-    /* Mark as saved - this is a fresh start */
-    window_state.is_modified = false;
-    editor_text_mark_saved();
-    editor_statusbar_set_modified(false);
-    editor_window_update_title(NULL, false);
-    editor_statusbar_set_message("New shader created");
 }
 
 static void on_load_clicked(gpointer user_data) {
