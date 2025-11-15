@@ -81,6 +81,7 @@ static const char *default_shader =
 static struct {
     GtkWidget *window;
     GtkWidget *notebook;
+    GtkWidget *editor_vbox;
     GtkWidget *text_widget;
     GtkWidget *preview_widget;
     GtkWidget *toolbar_widget;
@@ -93,6 +94,7 @@ static struct {
 } window_state = {
     .window = NULL,
     .notebook = NULL,
+    .editor_vbox = NULL,
     .text_widget = NULL,
     .preview_widget = NULL,
     .toolbar_widget = NULL,
@@ -390,11 +392,13 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
             break;
 
         case VIEW_MODE_PREVIEW_ONLY:
+            /* Hide only the editor, keep tabs visible */
             gtk_widget_hide(window_state.text_widget);
+            gtk_widget_show(window_state.notebook);
             gtk_widget_show(window_state.preview_widget);
             /* Resume rendering when preview is visible */
             editor_preview_set_paused(false);
-            editor_statusbar_set_message("Preview only mode");
+            editor_statusbar_set_message("Preview fullscreen with tabs");
             break;
     }
 }
@@ -738,18 +742,18 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
                      G_CALLBACK(on_paned_size_allocate), NULL);
 
     /* Create vertical box for text editor side (notebook + editor) */
-    GtkWidget *editor_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    window_state.editor_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 
     /* Add notebook to editor side */
-    gtk_box_pack_start(GTK_BOX(editor_vbox), window_state.notebook, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.editor_vbox), window_state.notebook, FALSE, FALSE, 0);
 
     /* Create text editor with loaded settings */
     window_state.text_widget = editor_text_create(&editor_settings);
     /* Note: callbacks connected after initial content is loaded */
-    gtk_box_pack_start(GTK_BOX(editor_vbox), window_state.text_widget, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.editor_vbox), window_state.text_widget, TRUE, TRUE, 0);
 
     /* Add editor side to paned */
-    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), editor_vbox, TRUE, TRUE);
+    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.editor_vbox, TRUE, TRUE);
 
     /* Create preview */
     window_state.preview_widget = editor_preview_create();
@@ -1035,6 +1039,8 @@ void editor_window_destroy(void) {
     editor_tabs_cleanup();
 
     window_state.window = NULL;
+    window_state.notebook = NULL;
+    window_state.editor_vbox = NULL;
     window_state.text_widget = NULL;
     window_state.preview_widget = NULL;
     window_state.toolbar_widget = NULL;
