@@ -228,51 +228,127 @@ static GtkWidget* create_help_content(void) {
                             gtk_label_new("📖 GLSL Ref"));
 
     /* ===== ABOUT TAB ===== */
-    GtkWidget *about_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
-    gtk_container_set_border_width(GTK_CONTAINER(about_box), 24);
+    GtkWidget *about_scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(about_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
 
-    GtkWidget *app_title = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(app_title),
-                        "<span size='xx-large'><b>gleditor</b></span>");
-    gtk_box_pack_start(GTK_BOX(about_box), app_title, FALSE, FALSE, 0);
+    GtkWidget *about_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_container_set_border_width(GTK_CONTAINER(about_box), 32);
+    gtk_widget_set_halign(about_box, GTK_ALIGN_CENTER);
 
-    GtkWidget *app_subtitle = gtk_label_new("GLSL Shader Editor for NeoWall");
+    /* Logo - Try to load SVG, fallback to text */
+    GtkWidget *logo = NULL;
+    GError *error = NULL;
+    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_scale("data/gleditor.svg", 400, 133, TRUE, &error);
+    if (pixbuf) {
+        logo = gtk_image_new_from_pixbuf(pixbuf);
+        g_object_unref(pixbuf);
+    } else {
+        if (error) g_error_free(error);
+        /* Fallback to styled text logo */
+        logo = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(logo),
+                            "<span size='xx-large' font_family='monospace' foreground='#00ff88'><b>gleditor</b></span>");
+    }
+    gtk_box_pack_start(GTK_BOX(about_box), logo, FALSE, FALSE, 8);
+
+    GtkWidget *app_subtitle = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(app_subtitle),
+                        "<span size='large' style='italic'>GLSL Shader Editor for NeoWall</span>");
     gtk_box_pack_start(GTK_BOX(about_box), app_subtitle, FALSE, FALSE, 0);
 
+    GtkWidget *version_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(version_label),
+                        "<span foreground='#888'>Version 1.0.0 • MIT License</span>");
+    gtk_box_pack_start(GTK_BOX(about_box), version_label, FALSE, FALSE, 16);
+
+    /* Separator */
     GtkWidget *separator1 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(about_box), separator1, FALSE, FALSE, 8);
 
-    const char *about_text[] = {
-        "<b>Features:</b>",
+    /* Features section */
+    GtkWidget *features_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(features_title), "<b>✨ Features</b>");
+    gtk_widget_set_halign(features_title, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(about_box), features_title, FALSE, FALSE, 4);
+
+    const char *features[] = {
         "• Syntax highlighting for GLSL shaders",
         "• Real-time shader preview with Shadertoy compatibility",
-        "• 170+ auto-completion items for GLSL",
+        "• 170+ auto-completion items (keywords, functions, snippets)",
         "• Multiple color themes and customizable fonts",
         "• Configurable editor behavior and appearance",
         "• Error panel with compilation diagnostics",
-        "",
-        "<b>Version:</b> 1.0.0",
-        "<b>License:</b> MIT",
-        "",
-        "<b>Built with:</b>",
-        "• GTK+ 3",
-        "• GtkSourceView 4",
-        "• OpenGL ES 2.0/3.0",
-        "",
-        "For bug reports and feature requests:",
-        "Visit the GitHub repository",
+        "• 20+ keyboard shortcuts for productivity",
         NULL
     };
 
-    for (int i = 0; about_text[i] != NULL; i++) {
-        GtkWidget *label = gtk_label_new(NULL);
-        gtk_label_set_markup(GTK_LABEL(label), about_text[i]);
+    for (int i = 0; features[i] != NULL; i++) {
+        GtkWidget *label = gtk_label_new(features[i]);
         gtk_widget_set_halign(label, GTK_ALIGN_START);
-        gtk_label_set_selectable(GTK_LABEL(label), TRUE);
-        gtk_box_pack_start(GTK_BOX(about_box), label, FALSE, FALSE, 0);
+        gtk_widget_set_margin_start(label, 16);
+        gtk_box_pack_start(GTK_BOX(about_box), label, FALSE, FALSE, 2);
     }
 
-    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), about_box,
+    gtk_box_pack_start(GTK_BOX(about_box), gtk_label_new(""), FALSE, FALSE, 4);
+
+    /* Built with section */
+    GtkWidget *tech_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(tech_title), "<b>🔧 Built With</b>");
+    gtk_widget_set_halign(tech_title, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(about_box), tech_title, FALSE, FALSE, 4);
+
+    const char *tech_stack[] = {
+        "• GTK+ 3",
+        "• GtkSourceView 4",
+        "• OpenGL ES 2.0/3.0+",
+        "• EGL",
+        NULL
+    };
+
+    for (int i = 0; tech_stack[i] != NULL; i++) {
+        GtkWidget *label = gtk_label_new(tech_stack[i]);
+        gtk_widget_set_halign(label, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(label, 16);
+        gtk_box_pack_start(GTK_BOX(about_box), label, FALSE, FALSE, 2);
+    }
+
+    gtk_box_pack_start(GTK_BOX(about_box), gtk_label_new(""), FALSE, FALSE, 4);
+
+    /* Links section */
+    GtkWidget *links_title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(links_title), "<b>🔗 Links</b>");
+    gtk_widget_set_halign(links_title, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(about_box), links_title, FALSE, FALSE, 4);
+
+    /* GitHub Repository link */
+    GtkWidget *repo_link = gtk_link_button_new_with_label(
+        "https://github.com/1ay1/gleditor",
+        "📦 GitHub Repository");
+    gtk_button_set_relief(GTK_BUTTON(repo_link), GTK_RELIEF_NONE);
+    gtk_widget_set_halign(repo_link, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(repo_link, 16);
+    gtk_box_pack_start(GTK_BOX(about_box), repo_link, FALSE, FALSE, 2);
+
+    /* Developer link */
+    GtkWidget *dev_link = gtk_link_button_new_with_label(
+        "https://github.com/1ay1/",
+        "👨‍💻 Developer: @1ay1");
+    gtk_button_set_relief(GTK_BUTTON(dev_link), GTK_RELIEF_NONE);
+    gtk_widget_set_halign(dev_link, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(dev_link, 16);
+    gtk_box_pack_start(GTK_BOX(about_box), dev_link, FALSE, FALSE, 2);
+
+    gtk_box_pack_start(GTK_BOX(about_box), gtk_label_new(""), FALSE, FALSE, 8);
+
+    /* Footer */
+    GtkWidget *footer = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(footer),
+                        "<span size='small' foreground='#666'>Made with ❤️ for shader artists and developers</span>");
+    gtk_box_pack_start(GTK_BOX(about_box), footer, FALSE, FALSE, 8);
+
+    gtk_container_add(GTK_CONTAINER(about_scroll), about_box);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), about_scroll,
                             gtk_label_new("ℹ️ About"));
 
     return notebook;
