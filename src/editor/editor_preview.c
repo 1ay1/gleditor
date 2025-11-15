@@ -117,18 +117,18 @@ static void clear_error(void) {
 static gboolean animation_timer_cb(gpointer user_data) {
     (void)user_data;
 
-    if (!preview_state.gl_area || !preview_state.shader_valid) {
+    if (!preview_state.gl_area) {
         return G_SOURCE_CONTINUE;
     }
 
-    /* Only render if not paused or if needed */
-    if (!preview_state.paused || preview_state.needs_render) {
-        double current_time = get_time();
+    /* Always render when not paused, or when render is needed (paused but dirty) */
+    double current_time = get_time();
 
-        /* Frame rate limiting - only render if enough time has passed */
-        if (current_time - preview_state.last_render_time >= preview_state.min_frame_time) {
-            gtk_widget_queue_draw(preview_state.gl_area);
-            preview_state.last_render_time = current_time;
+    /* Frame rate limiting - only render if enough time has passed */
+    if (current_time - preview_state.last_render_time >= preview_state.min_frame_time) {
+        gtk_widget_queue_draw(preview_state.gl_area);
+        preview_state.last_render_time = current_time;
+        if (preview_state.paused) {
             preview_state.needs_render = false;
         }
     }
@@ -145,11 +145,6 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
     if (gtk_gl_area_get_error(area) != NULL) {
         set_error("Failed to initialize OpenGL context");
         return;
-    }
-
-    /* Enable VSync for smoother rendering and less tearing */
-    if (preview_state.vsync_enabled) {
-        gdk_gl_context_set_use_es(gtk_gl_area_get_context(area), TRUE);
     }
 
     /* Setup fullscreen quad vertices */
