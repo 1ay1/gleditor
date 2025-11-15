@@ -96,6 +96,11 @@ static gboolean render_tick_callback(GtkWidget *widget, GdkFrameClock *frame_clo
     (void)frame_clock;
     (void)user_data;
 
+    /* Skip rendering if paused */
+    if (preview_state.paused) {
+        return G_SOURCE_CONTINUE;
+    }
+
     /* Invalidate the GL area to trigger a render on this frame */
     gtk_gl_area_queue_render(GTK_GL_AREA(widget));
 
@@ -158,6 +163,13 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
 static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data) {
     (void)context;
     (void)user_data;
+
+    /* If paused, don't update FPS or render */
+    if (preview_state.paused) {
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        return TRUE;
+    }
 
     /* Update FPS counter (do this first, even if no shader) */
     preview_state.frame_count++;
@@ -437,11 +449,15 @@ bool editor_preview_has_shader(void) {
 
 void editor_preview_set_paused(bool paused) {
     if (paused && !preview_state.paused) {
-        /* Pausing - store current time */
+        /* Pausing - store current time and reset FPS */
         preview_state.pause_time = (get_time() - preview_state.start_time) * preview_state.time_speed;
+        preview_state.current_fps = 0.0;
+        preview_state.frame_count = 0;
     } else if (!paused && preview_state.paused) {
-        /* Resuming - adjust start time */
+        /* Resuming - adjust start time and reset FPS tracking */
         preview_state.start_time = get_time() - (preview_state.pause_time / preview_state.time_speed);
+        preview_state.last_fps_time = get_time();
+        preview_state.frame_count = 0;
     }
 
     preview_state.paused = paused;
