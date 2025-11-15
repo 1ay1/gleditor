@@ -96,9 +96,14 @@ static struct {
     GtkWidget *statusbar_widget;
     GtkWidget *error_panel_widget;
     GtkWidget *paned_widget;
+    GtkWidget *fullscreen_window;
     bool is_open;
+    bool preview_is_fullscreen;
+    bool was_paused_before_fullscreen;
+    ViewMode view_mode_before_fullscreen;
     guint compile_timeout_id;
     guint fps_update_id;
+    guint fullscreen_pause_timeout_id;
 } window_state = {
     .window = NULL,
     .main_vbox = NULL,
@@ -117,9 +122,14 @@ static struct {
     .statusbar_widget = NULL,
     .error_panel_widget = NULL,
     .paned_widget = NULL,
+    .fullscreen_window = NULL,
     .is_open = false,
+    .preview_is_fullscreen = false,
+    .was_paused_before_fullscreen = false,
+    .view_mode_before_fullscreen = VIEW_MODE_BOTH,
     .compile_timeout_id = 0,
-    .fps_update_id = 0
+    .fps_update_id = 0,
+    .fullscreen_pause_timeout_id = 0
 };
 
 /* Forward declarations */
@@ -129,6 +139,10 @@ static void on_preview_error(const char *error, gpointer user_data);
 static void on_gl_realized(GtkGLArea *area, gpointer user_data);
 static gboolean compile_shader_delayed(gpointer user_data);
 static gboolean update_fps_timer(gpointer user_data);
+static void on_view_mode_changed(ViewMode mode, gpointer user_data);
+static void on_preview_double_click(gpointer user_data);
+static gboolean on_fullscreen_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
+static gboolean on_fullscreen_preview_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data);
 static void on_settings_changed(EditorSettings *settings, gpointer user_data);
 static void on_error_status_clicked(gpointer user_data);
 static void on_paned_size_allocate(GtkWidget *widget, GdkRectangle *allocation, gpointer user_data);
@@ -383,6 +397,170 @@ static void on_toggle_split_clicked(gpointer user_data) {
 
     /* Update toolbar button icon */
     editor_toolbar_set_split_horizontal(editor_settings.split_orientation == SPLIT_HORIZONTAL);
+}
+
+/* Key press handler for fullscreen window - ESC to exit */
+static gboolean on_fullscreen_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    
+    /* ESC to exit fullscreen */
+    if (event->keyval == GDK_KEY_Escape) {
+        on_preview_double_click(NULL);
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
+/* Button press handler for fullscreen preview - double-click to exit */
+static gboolean on_fullscreen_preview_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+    
+    if (event->type == GDK_2BUTTON_PRESS && event->button == 1) {
+        on_preview_double_click(NULL);
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
+/* Timeout callback to restore pause state after fullscreen transition */
+static gboolean restore_pause_state_timeout(gpointer user_data) {
+    (void)user_data;
+    
+    if (window_state.was_paused_before_fullscreen) {
+        editor_preview_set_paused(true);
+    }
+    
+    window_state.fullscreen_pause_timeout_id = 0;
+    return G_SOURCE_REMOVE;
+}
+
+/* Callback for preview double-click - toggle window fullscreen with preview-only mode */
+static void on_preview_double_click(gpointer user_data) {
+    (void)user_data;
+    
+    if (window_state.preview_is_fullscreen) {
+        /* Cancel any pending pause restore timeout */
+        if (window_state.fullscreen_pause_timeout_id > 0) {
+            g_source_remove(window_state.fullscreen_pause_timeout_id);
+            window_state.fullscreen_pause_timeout_id = 0;
+        }
+        
+        /* Exit fullscreen mode */
+        if (window_state.fullscreen_window && window_state.preview_widget) {
+            /* Temporarily unpause during reparenting to keep GL context alive */
+            bool was_paused = editor_preview_is_paused();
+            if (was_paused) {
+                editor_preview_set_paused(false);
+                editor_preview_queue_render();
+            }
+            
+            /* Disconnect the double-click handler from fullscreen window */
+            g_signal_handlers_disconnect_by_func(window_state.preview_widget,
+                                                 G_CALLBACK(on_fullscreen_preview_button_press), NULL);
+            
+            /* Reparent preview back to its original container */
+            g_object_ref(window_state.preview_widget);
+            gtk_container_remove(GTK_CONTAINER(window_state.fullscreen_window), window_state.preview_widget);
+            
+            /* Hide fullscreen window before destroying */
+            gtk_widget_hide(window_state.fullscreen_window);
+            
+            /* Restore to previous view mode */
+            on_view_mode_changed(window_state.view_mode_before_fullscreen, NULL);
+            editor_toolbar_set_view_mode(window_state.view_mode_before_fullscreen);
+            
+            /* Show the preview widget */
+            gtk_widget_show(window_state.preview_widget);
+            g_object_unref(window_state.preview_widget);
+            
+            /* Destroy fullscreen window */
+            gtk_widget_destroy(window_state.fullscreen_window);
+            window_state.fullscreen_window = NULL;
+            window_state.preview_is_fullscreen = false;
+            
+            /* Restore cursor */
+            GdkWindow *main_gdk_window = gtk_widget_get_window(window_state.window);
+            if (main_gdk_window) {
+                gdk_window_set_cursor(main_gdk_window, NULL);
+            }
+            
+            /* Restore pause state after a delay to ensure GL widget is fully realized back in main window */
+            if (window_state.was_paused_before_fullscreen) {
+                window_state.fullscreen_pause_timeout_id = g_timeout_add(100, restore_pause_state_timeout, NULL);
+            }
+            
+            /* Queue a render to refresh */
+            editor_preview_queue_render();
+        }
+    } else {
+        /* Enter fullscreen mode */
+        
+        /* Save current view mode and pause state */
+        window_state.view_mode_before_fullscreen = editor_toolbar_get_view_mode();
+        window_state.was_paused_before_fullscreen = editor_preview_is_paused();
+        
+        /* Always unpause during reparenting to keep GL context alive */
+        bool need_unpause = window_state.was_paused_before_fullscreen;
+        if (need_unpause) {
+            editor_preview_set_paused(false);
+        }
+        
+        /* Queue render to ensure GL context is active before reparenting */
+        editor_preview_queue_render();
+        
+        /* Create a new fullscreen window */
+        window_state.fullscreen_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_window_fullscreen(GTK_WINDOW(window_state.fullscreen_window));
+        gtk_window_set_decorated(GTK_WINDOW(window_state.fullscreen_window), FALSE);
+        
+        /* Set black background using CSS */
+        GtkCssProvider *css_provider = gtk_css_provider_new();
+        gtk_css_provider_load_from_data(css_provider, "window { background-color: black; }", -1, NULL);
+        GtkStyleContext *context = gtk_widget_get_style_context(window_state.fullscreen_window);
+        gtk_style_context_add_provider(context, GTK_STYLE_PROVIDER(css_provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        g_object_unref(css_provider);
+        
+        /* Connect key press for ESC to exit */
+        g_signal_connect(window_state.fullscreen_window, "key-press-event",
+                        G_CALLBACK(on_fullscreen_key_press), NULL);
+        
+        /* Reparent preview widget to fullscreen window (this is the same widget, not a copy) */
+        g_object_ref(window_state.preview_widget);
+        GtkWidget *old_parent = gtk_widget_get_parent(window_state.preview_widget);
+        if (old_parent) {
+            gtk_container_remove(GTK_CONTAINER(old_parent), window_state.preview_widget);
+        }
+        gtk_container_add(GTK_CONTAINER(window_state.fullscreen_window), window_state.preview_widget);
+        gtk_widget_show_all(window_state.preview_widget);
+        g_object_unref(window_state.preview_widget);
+        
+        /* Connect double-click on preview to exit fullscreen */
+        g_signal_connect(window_state.preview_widget, "button-press-event",
+                        G_CALLBACK(on_fullscreen_preview_button_press), NULL);
+        
+        /* Show fullscreen window */
+        gtk_widget_show_all(window_state.fullscreen_window);
+        window_state.preview_is_fullscreen = true;
+        
+        /* Restore pause state after a delay to ensure GL widget is fully realized */
+        if (window_state.was_paused_before_fullscreen) {
+            /* Wait 100ms for the GL context to be fully initialized in the new window */
+            window_state.fullscreen_pause_timeout_id = g_timeout_add(100, restore_pause_state_timeout, NULL);
+        }
+        
+        /* Hide cursor for immersive experience - wait for window to be realized */
+        gtk_widget_realize(window_state.fullscreen_window);
+        GdkWindow *gdk_window = gtk_widget_get_window(window_state.fullscreen_window);
+        if (gdk_window) {
+            GdkCursor *cursor = gdk_cursor_new_for_display(gdk_display_get_default(), GDK_BLANK_CURSOR);
+            gdk_window_set_cursor(gdk_window, cursor);
+            g_object_unref(cursor);
+        }
+    }
 }
 
 static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
@@ -826,6 +1004,9 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     /* Connect to GL realize signal to compile shader when context is ready */
     g_signal_connect(window_state.preview_widget, "realize",
                      G_CALLBACK(on_gl_realized), NULL);
+    
+    /* Connect preview double-click to toggle fullscreen (set after window is shown) */
+    /* This will be connected after window creation to avoid issues */
 
     /* Create container for editor in paned view */
     window_state.text_container_paned = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -965,6 +1146,9 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     /* Initialize toolbar view button states */
     editor_toolbar_set_split_horizontal(editor_settings.split_orientation == SPLIT_HORIZONTAL);
     editor_toolbar_set_view_mode(VIEW_MODE_BOTH);
+
+    /* Connect preview double-click to toggle fullscreen AFTER window is shown */
+    editor_preview_set_double_click_callback(on_preview_double_click, NULL);
 
     /* Log initial settings state */
     g_message("Settings loaded: auto_compile=%s, compile_button=%s",

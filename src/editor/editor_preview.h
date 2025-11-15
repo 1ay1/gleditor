@@ -14,8 +14,9 @@
 #include <GLES2/gl2.h>
 #endif
 
-/* Preview state callback signature */
+/* Preview state callback signatures */
 typedef void (*editor_preview_error_callback_t)(const char *error, gpointer user_data);
+typedef void (*editor_preview_double_click_callback_t)(gpointer user_data);
 
 /**
  * Create the OpenGL preview widget
@@ -103,6 +104,16 @@ void editor_preview_get_mouse(float *x, float *y);
  */
 void editor_preview_set_error_callback(editor_preview_error_callback_t callback,
                                        gpointer user_data);
+
+/**
+ * Set double-click callback
+ * Called when preview is double-clicked (to toggle fullscreen)
+ * 
+ * @param callback Callback function
+ * @param user_data User data passed to callback
+ */
+void editor_preview_set_double_click_callback(editor_preview_double_click_callback_t callback,
+                                               gpointer user_data);
 
 /**
  * Force a redraw of the preview

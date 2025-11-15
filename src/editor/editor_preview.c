@@ -36,6 +36,8 @@ static struct {
     guint tick_callback_id;
     editor_preview_error_callback_t error_callback;
     gpointer error_callback_data;
+    editor_preview_double_click_callback_t double_click_callback;
+    gpointer double_click_callback_data;
     char *error_message;
     bool has_error;
 } preview_state = {
@@ -57,6 +59,8 @@ static struct {
     .tick_callback_id = 0,
     .error_callback = NULL,
     .error_callback_data = NULL,
+    .double_click_callback = NULL,
+    .double_click_callback_data = NULL,
     .error_message = NULL,
     .has_error = false
 };
@@ -332,6 +336,22 @@ static gboolean on_preview_motion(GtkWidget *widget, GdkEventMotion *event, gpoi
     return FALSE;
 }
 
+/* Button press callback for double-click detection */
+static gboolean on_preview_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data) {
+    (void)widget;
+    (void)user_data;
+
+    /* Detect double-click (left button) */
+    if (event->type == GDK_2BUTTON_PRESS && event->button == 1) {
+        if (preview_state.double_click_callback) {
+            preview_state.double_click_callback(preview_state.double_click_callback_data);
+        }
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 /* Public API Implementation */
 
 GtkWidget *editor_preview_create(void) {
@@ -357,9 +377,13 @@ GtkWidget *editor_preview_create(void) {
                      G_CALLBACK(on_gl_unrealize), NULL);
 
     /* Connect mouse motion for shader mouse input */
-    gtk_widget_add_events(preview_state.gl_area, GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(preview_state.gl_area, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK);
     g_signal_connect(preview_state.gl_area, "motion-notify-event",
                      G_CALLBACK(on_preview_motion), NULL);
+    
+    /* Connect button press for double-click detection */
+    g_signal_connect(preview_state.gl_area, "button-press-event",
+                     G_CALLBACK(on_preview_button_press), NULL);
 
     /* Initialize FPS timing */
     preview_state.start_time = get_time();
@@ -497,6 +521,12 @@ void editor_preview_set_error_callback(editor_preview_error_callback_t callback,
                                        gpointer user_data) {
     preview_state.error_callback = callback;
     preview_state.error_callback_data = user_data;
+}
+
+void editor_preview_set_double_click_callback(editor_preview_double_click_callback_t callback,
+                                               gpointer user_data) {
+    preview_state.double_click_callback = callback;
+    preview_state.double_click_callback_data = user_data;
 }
 
 void editor_preview_queue_render(void) {
