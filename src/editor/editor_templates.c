@@ -384,7 +384,9 @@ char *editor_templates_show_dialog(GtkWindow *parent) {
         on_row_selected(NULL, first_row, NULL);
     }
 
+    /* Show and realize dialog before running it to avoid GTK warnings */
     gtk_widget_show_all(dialog_state.dialog);
+    gtk_widget_realize(dialog_state.dialog);
 
     /* Run dialog */
     int response = gtk_dialog_run(GTK_DIALOG(dialog_state.dialog));
