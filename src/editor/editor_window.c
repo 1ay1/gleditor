@@ -926,6 +926,12 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
         if (initial_tab >= 0) {
             on_tab_changed(initial_tab, NULL);
         }
+    } else {
+        /* Manually trigger tab changed callback for the current tab after restore */
+        int current_tab = editor_tabs_get_current();
+        if (current_tab >= 0) {
+            on_tab_changed(current_tab, NULL);
+        }
     }
 
     /* Initialize keyboard shortcuts */

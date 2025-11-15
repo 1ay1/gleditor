@@ -458,7 +458,9 @@ bool editor_tabs_save_session(void) {
 }
 
 bool editor_tabs_restore_session(void) {
-    if (!state.initialized) return false;
+    if (!state.initialized) {
+        return false;
+    }
 
     /* Get config directory */
     char config_dir[PATH_MAX];
