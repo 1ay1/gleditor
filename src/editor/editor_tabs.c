@@ -232,10 +232,19 @@ bool editor_tabs_close(int tab_id) {
     /* Remove from notebook */
     gtk_notebook_remove_page(state.notebook, page_num);
 
-    /* Free tab data */
-    g_free(tab->title);
-    g_free(tab->code);
-    if (tab->file_path) g_free(tab->file_path);
+    /* Free tab data and NULL pointers to prevent double-free */
+    if (tab->title) {
+        g_free(tab->title);
+        tab->title = NULL;
+    }
+    if (tab->code) {
+        g_free(tab->code);
+        tab->code = NULL;
+    }
+    if (tab->file_path) {
+        g_free(tab->file_path);
+        tab->file_path = NULL;
+    }
 
     /* Shift remaining tabs down */
     for (int i = page_num; i < state.tab_count - 1; i++) {
@@ -369,12 +378,19 @@ GtkWidget *editor_tabs_get_notebook(void) {
 void editor_tabs_cleanup(void) {
     if (!state.initialized) return;
 
-    /* Free all tab data */
+    /* Free all tab data - check for NULL to avoid double-free */
     for (int i = 0; i < state.tab_count; i++) {
-        g_free(state.tabs[i].title);
-        g_free(state.tabs[i].code);
+        if (state.tabs[i].title) {
+            g_free(state.tabs[i].title);
+            state.tabs[i].title = NULL;
+        }
+        if (state.tabs[i].code) {
+            g_free(state.tabs[i].code);
+            state.tabs[i].code = NULL;
+        }
         if (state.tabs[i].file_path) {
             g_free(state.tabs[i].file_path);
+            state.tabs[i].file_path = NULL;
         }
     }
 
@@ -436,7 +452,6 @@ bool editor_tabs_save_session(void) {
     }
 
     g_key_file_free(keyfile);
-    g_free(config_dir);
     g_free(session_file);
 
     return success;

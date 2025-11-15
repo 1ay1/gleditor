@@ -720,12 +720,15 @@ static gboolean on_delete_event(GtkWidget *widget, GdkEvent *event, gpointer use
         editor_tabs_save_session();
     }
 
-    /* Check if any tabs have unsaved changes */
-    int tab_count = editor_tabs_get_count();
-    for (int i = 0; i < tab_count; i++) {
-        /* Tabs will be closed one by one, each prompting if needed */
+    /* Close all tabs (each will prompt if modified) */
+    while (editor_tabs_get_count() > 0) {
+        if (!editor_tabs_close_current()) {
+            /* User cancelled - prevent window from closing */
+            return TRUE;
+        }
     }
 
+    /* Allow window to close - destroy handler will clean up */
     return FALSE;
 }
 
@@ -1150,9 +1153,9 @@ void editor_window_destroy(void) {
         window_state.fps_update_id = 0;
     }
 
-    /* Destroy components */
-    editor_text_destroy();
+    /* Destroy components in order - preview first to ensure GL cleanup happens properly */
     editor_preview_destroy();
+    editor_text_destroy();
     editor_toolbar_destroy();
     editor_statusbar_destroy();
     editor_error_panel_destroy();

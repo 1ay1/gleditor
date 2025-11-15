@@ -258,6 +258,12 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
 static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
     (void)user_data;
 
+    /* Skip if already cleaned up */
+    if (!preview_state.gl_initialized && preview_state.shader_program == 0 && 
+        preview_state.vbo == 0 && preview_state.vao == 0) {
+        return;
+    }
+
     gtk_gl_area_make_current(area);
 
     if (gtk_gl_area_get_error(area) != NULL) {
@@ -278,7 +284,7 @@ static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
     }
 
     /* Cleanup shader program */
-    if (preview_state.shader_program) {
+    if (preview_state.shader_program != 0) {
         glDeleteProgram(preview_state.shader_program);
         preview_state.shader_program = 0;
     }
@@ -490,8 +496,42 @@ void editor_preview_destroy(void) {
         preview_state.tick_callback_id = 0;
     }
 
-    /* Cleanup is handled by GTK/OpenGL unrealize callback */
+    /* Clean up OpenGL resources if context is still valid */
+    if (preview_state.gl_area && gtk_widget_get_realized(preview_state.gl_area)) {
+        gtk_gl_area_make_current(GTK_GL_AREA(preview_state.gl_area));
+        
+        if (gtk_gl_area_get_error(GTK_GL_AREA(preview_state.gl_area)) == NULL) {
+            /* Cleanup shader program */
+            if (preview_state.shader_program) {
+                glDeleteProgram(preview_state.shader_program);
+                preview_state.shader_program = 0;
+            }
+
+            if (preview_state.vbo != 0) {
+                glDeleteBuffers(1, &preview_state.vbo);
+                preview_state.vbo = 0;
+            }
+
+#ifdef HAVE_GLES3
+            if (preview_state.vao != 0) {
+                glDeleteVertexArrays(1, &preview_state.vao);
+                preview_state.vao = 0;
+            }
+#endif
+        }
+    }
+
+    /* Cleanup error message */
+    if (preview_state.error_message) {
+        g_free(preview_state.error_message);
+        preview_state.error_message = NULL;
+    }
+
+    /* Reset state */
     preview_state.gl_area = NULL;
     preview_state.error_callback = NULL;
     preview_state.error_callback_data = NULL;
+    preview_state.gl_initialized = false;
+    preview_state.shader_valid = false;
+    preview_state.has_error = false;
 }
