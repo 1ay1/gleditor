@@ -379,17 +379,33 @@ void editor_text_set_code(const char *code) {
         return;
     }
 
+    /* Temporarily block completion to prevent popup on code load */
+    GtkSourceCompletion *completion = gtk_source_view_get_completion(GTK_SOURCE_VIEW(editor_state.source_view));
+    if (completion) {
+        gtk_source_completion_block_interactive(completion);
+    }
+
     /* Temporarily disconnect change signal to avoid spurious callbacks */
     g_signal_handlers_block_by_func(editor_state.source_buffer,
                                     G_CALLBACK(on_buffer_changed), NULL);
 
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(editor_state.source_buffer), code, -1);
 
+    /* Move cursor to start to avoid triggering completion */
+    GtkTextIter start;
+    gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(editor_state.source_buffer), &start);
+    gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(editor_state.source_buffer), &start);
+
     /* Don't mark as modified here - let the caller decide via mark_saved() */
 
     /* Unblock signal */
     g_signal_handlers_unblock_by_func(editor_state.source_buffer,
                                       G_CALLBACK(on_buffer_changed), NULL);
+
+    /* Unblock completion after text is fully set */
+    if (completion) {
+        gtk_source_completion_unblock_interactive(completion);
+    }
 
     editor_state.modified = false;
 }
