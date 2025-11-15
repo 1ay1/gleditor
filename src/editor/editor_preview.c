@@ -38,17 +38,6 @@ static struct {
     gpointer error_callback_data;
     char *error_message;
     bool has_error;
-
-    /* Optimization state */
-    bool needs_render;
-    double last_render_time;
-    int target_fps;
-    double min_frame_time;
-    bool vsync_enabled;
-    int cached_width;
-    int cached_height;
-    GLint cached_uniform_locations[10];
-    bool uniforms_cached;
 } preview_state = {
     .gl_area = NULL,
     .shader_program = 0,
@@ -69,16 +58,7 @@ static struct {
     .error_callback = NULL,
     .error_callback_data = NULL,
     .error_message = NULL,
-    .has_error = false,
-    .needs_render = true,
-    .last_render_time = 0.0,
-    .target_fps = 60,
-    .min_frame_time = 1.0 / 60.0,
-    .vsync_enabled = true,
-    .cached_width = 0,
-    .cached_height = 0,
-    .cached_uniform_locations = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-    .uniforms_cached = false
+    .has_error = false
 };
 
 /* Helper: Get current time in seconds */
@@ -113,26 +93,12 @@ static void clear_error(void) {
     preview_state.has_error = false;
 }
 
-/* Animation timer callback with frame rate limiting */
+/* Animation timer callback */
 static gboolean animation_timer_cb(gpointer user_data) {
     (void)user_data;
-
-    if (!preview_state.gl_area) {
-        return G_SOURCE_CONTINUE;
-    }
-
-    /* Always render when not paused, or when render is needed (paused but dirty) */
-    double current_time = get_time();
-
-    /* Frame rate limiting - only render if enough time has passed */
-    if (current_time - preview_state.last_render_time >= preview_state.min_frame_time) {
+    if (preview_state.gl_area) {
         gtk_widget_queue_draw(preview_state.gl_area);
-        preview_state.last_render_time = current_time;
-        if (preview_state.paused) {
-            preview_state.needs_render = false;
-        }
     }
-
     return G_SOURCE_CONTINUE;
 }
 
@@ -164,20 +130,10 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
     glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    /* Optimize GL state */
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_STENCIL_TEST);
-    glDisable(GL_DITHER);
-
     preview_state.gl_initialized = true;
     preview_state.start_time = get_time();
     preview_state.last_fps_time = preview_state.start_time;
-    preview_state.last_render_time = preview_state.start_time;
     preview_state.frame_count = 0;
-    preview_state.needs_render = true;
 
     clear_error();
 }
@@ -198,13 +154,7 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
     int width = gtk_widget_get_allocated_width(GTK_WIDGET(area));
     int height = gtk_widget_get_allocated_height(GTK_WIDGET(area));
 
-    /* Only update viewport if size changed */
-    if (width != preview_state.cached_width || height != preview_state.cached_height) {
-        glViewport(0, 0, width, height);
-        preview_state.cached_width = width;
-        preview_state.cached_height = height;
-        preview_state.uniforms_cached = false; /* Recache uniforms on resize */
-    }
+    glViewport(0, 0, width, height);
 
     /* Calculate shader time */
     double current_time;
@@ -217,62 +167,61 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
     /* Use shader program */
     glUseProgram(preview_state.shader_program);
 
-    /* Cache uniform locations on first render or after shader change */
-    if (!preview_state.uniforms_cached) {
-        preview_state.cached_uniform_locations[0] = glGetUniformLocation(preview_state.shader_program, "_neowall_time");
-        preview_state.cached_uniform_locations[1] = glGetUniformLocation(preview_state.shader_program, "_neowall_resolution");
-        preview_state.cached_uniform_locations[2] = glGetUniformLocation(preview_state.shader_program, "iResolution");
-        preview_state.cached_uniform_locations[3] = glGetUniformLocation(preview_state.shader_program, "iTime");
-        preview_state.cached_uniform_locations[4] = glGetUniformLocation(preview_state.shader_program, "iTimeDelta");
-        preview_state.cached_uniform_locations[5] = glGetUniformLocation(preview_state.shader_program, "iFrame");
-        preview_state.cached_uniform_locations[6] = glGetUniformLocation(preview_state.shader_program, "iMouse");
-        preview_state.uniforms_cached = true;
+    /* Set NeoWall internal uniforms */
+    GLint loc;
+
+    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_time");
+    if (loc >= 0) {
+        glUniform1f(loc, (float)current_time);
     }
 
-    /* Set uniforms using cached locations - much faster */
-    if (preview_state.cached_uniform_locations[0] >= 0) {
-        glUniform1f(preview_state.cached_uniform_locations[0], (float)current_time);
+    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_resolution");
+    if (loc >= 0) {
+        glUniform2f(loc, (float)width, (float)height);
     }
 
-    if (preview_state.cached_uniform_locations[1] >= 0) {
-        glUniform2f(preview_state.cached_uniform_locations[1], (float)width, (float)height);
-    }
-
-    if (preview_state.cached_uniform_locations[2] >= 0) {
+    /* Set Shadertoy uniforms for compatibility */
+    loc = glGetUniformLocation(preview_state.shader_program, "iResolution");
+    if (loc >= 0) {
         float aspect = (width > 0 && height > 0) ? (float)width / (float)height : 1.0f;
-        glUniform3f(preview_state.cached_uniform_locations[2], (float)width, (float)height, aspect);
+        glUniform3f(loc, (float)width, (float)height, aspect);
     }
 
-    if (preview_state.cached_uniform_locations[3] >= 0) {
-        glUniform1f(preview_state.cached_uniform_locations[3], (float)current_time);
+    loc = glGetUniformLocation(preview_state.shader_program, "iTime");
+    if (loc >= 0) {
+        glUniform1f(loc, (float)current_time);
     }
 
-    if (preview_state.cached_uniform_locations[4] >= 0) {
-        glUniform1f(preview_state.cached_uniform_locations[4], preview_state.min_frame_time);
+    loc = glGetUniformLocation(preview_state.shader_program, "iTimeDelta");
+    if (loc >= 0) {
+        glUniform1f(loc, 1.0f / 60.0f);
     }
 
-    if (preview_state.cached_uniform_locations[5] >= 0) {
-        glUniform1i(preview_state.cached_uniform_locations[5], preview_state.frame_count);
+    loc = glGetUniformLocation(preview_state.shader_program, "iFrame");
+    if (loc >= 0) {
+        glUniform1i(loc, preview_state.frame_count);
     }
 
-    if (preview_state.cached_uniform_locations[6] >= 0) {
-        glUniform4f(preview_state.cached_uniform_locations[6],
+    loc = glGetUniformLocation(preview_state.shader_program, "iMouse");
+    if (loc >= 0) {
+        glUniform4f(loc,
                     preview_state.mouse_x * width,
                     preview_state.mouse_y * height,
                     0.0f, 0.0f);
     }
 
-    /* Draw fullscreen quad - VAO keeps state between frames */
+    /* Draw fullscreen quad */
 #ifdef HAVE_GLES3
     glBindVertexArray(preview_state.vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-#else
+#endif
+
     glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
     glDisableVertexAttribArray(0);
-#endif
 
     /* Update FPS counter */
     preview_state.frame_count++;
@@ -372,9 +321,8 @@ GtkWidget *editor_preview_create(void) {
     g_signal_connect(preview_state.gl_area, "motion-notify-event",
                      G_CALLBACK(on_preview_motion), NULL);
 
-    /* Start animation timer - adaptive based on target FPS */
-    int timer_interval = (int)(1000.0 / preview_state.target_fps);
-    preview_state.animation_timer_id = g_timeout_add(timer_interval, animation_timer_cb, NULL);
+    /* Start animation timer (60 FPS) */
+    preview_state.animation_timer_id = g_timeout_add(16, animation_timer_cb, NULL);
 
     return preview_state.gl_area;
 }
@@ -442,8 +390,6 @@ bool editor_preview_compile_shader(const char *shader_code) {
     /* Store new program */
     preview_state.shader_program = result.program;
     preview_state.shader_valid = true;
-    preview_state.uniforms_cached = false; /* Force recache of uniform locations */
-    preview_state.needs_render = true;
 
     clear_error();
     return true;
@@ -464,7 +410,6 @@ void editor_preview_set_paused(bool paused) {
     } else if (!paused && preview_state.paused) {
         /* Resuming - adjust start time */
         preview_state.start_time = get_time() - (preview_state.pause_time / preview_state.time_speed);
-        preview_state.needs_render = true;
     }
 
     preview_state.paused = paused;
@@ -479,7 +424,6 @@ void editor_preview_set_speed(float speed) {
         speed = 1.0f;
     }
     preview_state.time_speed = speed;
-    preview_state.needs_render = true;
 }
 
 float editor_preview_get_speed(void) {
@@ -490,7 +434,6 @@ void editor_preview_reset_time(void) {
     preview_state.start_time = get_time();
     preview_state.pause_time = 0.0;
     preview_state.frame_count = 0;
-    preview_state.needs_render = true;
 }
 
 double editor_preview_get_fps(void) {
@@ -509,7 +452,6 @@ void editor_preview_set_error_callback(editor_preview_error_callback_t callback,
 }
 
 void editor_preview_queue_render(void) {
-    preview_state.needs_render = true;
     if (preview_state.gl_area) {
         gtk_widget_queue_draw(preview_state.gl_area);
     }
