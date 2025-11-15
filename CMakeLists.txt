@@ -28,8 +28,14 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
 set(CMAKE_C_FLAGS_DEBUG "-g -O0 -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
 
+# Include GNUInstallDirs early for CMAKE_INSTALL_DATADIR
+include(GNUInstallDirs)
+
 # Add version definition
 add_definitions(-DVERSION="${PROJECT_VERSION}")
+
+# Define data directory paths for installed location
+add_definitions(-DGLEDITOR_DATADIR="${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/gleditor")
 
 # Find required packages
 find_package(PkgConfig REQUIRED)
@@ -113,6 +119,7 @@ set(SHADER_LIB_SOURCES
 
 set(MAIN_SOURCE
     src/main.c
+    src/shader_editor.c
 )
 
 # Create executable
@@ -168,7 +175,7 @@ elseif(PLATFORM_MACOS)
 endif()
 
 # Installation
-include(GNUInstallDirs)
+# (GNUInstallDirs already included above)
 
 # Install binary
 install(TARGETS gleditor

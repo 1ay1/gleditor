@@ -236,10 +236,25 @@ static GtkWidget* create_help_content(void) {
     gtk_container_set_border_width(GTK_CONTAINER(about_box), 32);
     gtk_widget_set_halign(about_box, GTK_ALIGN_CENTER);
 
-    /* Logo - Try to load SVG, fallback to text */
+    /* Logo - Try to load SVG from multiple locations, fallback to text */
     GtkWidget *logo = NULL;
     GError *error = NULL;
-    GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file_at_scale("data/gleditor.svg", 400, 133, TRUE, &error);
+    GdkPixbuf *pixbuf = NULL;
+
+    /* Try development path first */
+    pixbuf = gdk_pixbuf_new_from_file_at_scale("data/gleditor.svg", 400, 133, TRUE, &error);
+
+    /* If not found and we have an install path, try that */
+#ifdef GLEDITOR_DATADIR
+    if (!pixbuf && error) {
+        g_error_free(error);
+        error = NULL;
+        char installed_path[512];
+        snprintf(installed_path, sizeof(installed_path), "%s/gleditor.svg", GLEDITOR_DATADIR);
+        pixbuf = gdk_pixbuf_new_from_file_at_scale(installed_path, 400, 133, TRUE, &error);
+    }
+#endif
+
     if (pixbuf) {
         logo = gtk_image_new_from_pixbuf(pixbuf);
         g_object_unref(pixbuf);
