@@ -80,10 +80,14 @@ static const char *default_shader =
 /* Module state */
 static struct {
     GtkWidget *window;
+    GtkWidget *main_vbox;
+    GtkWidget *view_stack;
     GtkWidget *notebook;
+    GtkWidget *notebook_fullscreen;
     GtkWidget *editor_vbox;
     GtkWidget *text_widget;
     GtkWidget *preview_widget;
+    GtkWidget *preview_fullscreen;
     GtkWidget *toolbar_widget;
     GtkWidget *statusbar_widget;
     GtkWidget *error_panel_widget;
@@ -93,10 +97,14 @@ static struct {
     guint fps_update_id;
 } window_state = {
     .window = NULL,
+    .main_vbox = NULL,
+    .view_stack = NULL,
     .notebook = NULL,
+    .notebook_fullscreen = NULL,
     .editor_vbox = NULL,
     .text_widget = NULL,
     .preview_widget = NULL,
+    .preview_fullscreen = NULL,
     .toolbar_widget = NULL,
     .statusbar_widget = NULL,
     .error_panel_widget = NULL,
@@ -372,10 +380,12 @@ static void on_toggle_split_clicked(gpointer user_data) {
 static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
     (void)user_data;
 
-    if (!window_state.text_widget || !window_state.preview_widget) return;
+    if (!window_state.view_stack) return;
 
     switch (mode) {
         case VIEW_MODE_BOTH:
+            /* Show paned layout */
+            gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "paned");
             gtk_widget_show(window_state.text_widget);
             gtk_widget_show(window_state.preview_widget);
             /* Resume rendering when preview is visible */
@@ -384,6 +394,8 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
             break;
 
         case VIEW_MODE_EDITOR_ONLY:
+            /* Show paned layout but hide preview */
+            gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "paned");
             gtk_widget_show(window_state.text_widget);
             gtk_widget_hide(window_state.preview_widget);
             /* Pause rendering when preview is hidden to save resources */
@@ -392,10 +404,8 @@ static void on_view_mode_changed(ViewMode mode, gpointer user_data) {
             break;
 
         case VIEW_MODE_PREVIEW_ONLY:
-            /* Hide only the editor, keep tabs visible */
-            gtk_widget_hide(window_state.text_widget);
-            gtk_widget_show(window_state.notebook);
-            gtk_widget_show(window_state.preview_widget);
+            /* Show fullscreen preview layout */
+            gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "preview");
             /* Resume rendering when preview is visible */
             editor_preview_set_paused(false);
             editor_statusbar_set_message("Preview fullscreen with tabs");
@@ -694,10 +704,9 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     g_signal_connect(window_state.window, "delete-event", G_CALLBACK(on_delete_event), NULL);
     g_signal_connect(window_state.window, "destroy", G_CALLBACK(on_destroy), NULL);
 
-    /* Create main container */
     /* Create main vertical box */
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_container_add(GTK_CONTAINER(window_state.window), vbox);
+    window_state.main_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_add(GTK_CONTAINER(window_state.window), window_state.main_vbox);
 
     /* Create notebook for tabs */
     window_state.notebook = gtk_notebook_new();
@@ -726,34 +735,33 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
         .user_data = NULL
     };
     window_state.toolbar_widget = editor_toolbar_create(&toolbar_callbacks);
-    gtk_box_pack_start(GTK_BOX(vbox), window_state.toolbar_widget, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.main_vbox), window_state.toolbar_widget, FALSE, FALSE, 0);
 
     /* Load editor settings BEFORE creating editor */
     editor_settings_load(&editor_settings);
+
+    /* Add notebook at top level so it's always visible */
+    gtk_box_pack_start(GTK_BOX(window_state.main_vbox), window_state.notebook, FALSE, FALSE, 0);
+
+    /* Create stack to switch between paned and fullscreen preview */
+    window_state.view_stack = gtk_stack_new();
+    gtk_box_pack_start(GTK_BOX(window_state.main_vbox), window_state.view_stack, TRUE, TRUE, 0);
 
     /* Create paned for editor and preview */
     GtkOrientation orientation = (editor_settings.split_orientation == SPLIT_HORIZONTAL)
         ? GTK_ORIENTATION_HORIZONTAL : GTK_ORIENTATION_VERTICAL;
     window_state.paned_widget = gtk_paned_new(orientation);
-    gtk_box_pack_start(GTK_BOX(vbox), window_state.paned_widget, TRUE, TRUE, 0);
 
     /* Connect signal to set position after size allocation */
     g_signal_connect(window_state.paned_widget, "size-allocate",
                      G_CALLBACK(on_paned_size_allocate), NULL);
 
-    /* Create vertical box for text editor side (notebook + editor) */
-    window_state.editor_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-
-    /* Add notebook to editor side */
-    gtk_box_pack_start(GTK_BOX(window_state.editor_vbox), window_state.notebook, FALSE, FALSE, 0);
-
     /* Create text editor with loaded settings */
     window_state.text_widget = editor_text_create(&editor_settings);
     /* Note: callbacks connected after initial content is loaded */
-    gtk_box_pack_start(GTK_BOX(window_state.editor_vbox), window_state.text_widget, TRUE, TRUE, 0);
 
-    /* Add editor side to paned */
-    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.editor_vbox, TRUE, TRUE);
+    /* Add editor directly to paned */
+    gtk_paned_pack1(GTK_PANED(window_state.paned_widget), window_state.text_widget, TRUE, TRUE);
 
     /* Create preview */
     window_state.preview_widget = editor_preview_create();
@@ -765,13 +773,41 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
 
     gtk_paned_pack2(GTK_PANED(window_state.paned_widget), window_state.preview_widget, TRUE, TRUE);
 
+    /* Add paned to stack */
+    gtk_stack_add_named(GTK_STACK(window_state.view_stack), window_state.paned_widget, "paned");
+
+    /* Create fullscreen preview layout (notebook + preview fullscreen) */
+    GtkWidget *preview_fullscreen_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+    /* Create second notebook reference for fullscreen */
+    window_state.notebook_fullscreen = gtk_notebook_new();
+    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(window_state.notebook_fullscreen), TRUE);
+    gtk_notebook_set_scrollable(GTK_NOTEBOOK(window_state.notebook_fullscreen), TRUE);
+
+    /* Bind notebook pages - they share the same underlying tab manager */
+    g_object_bind_property(window_state.notebook, "page",
+                          window_state.notebook_fullscreen, "page",
+                          G_BINDING_BIDIRECTIONAL | G_BINDING_SYNC_CREATE);
+
+    gtk_box_pack_start(GTK_BOX(preview_fullscreen_vbox), window_state.notebook_fullscreen, FALSE, FALSE, 0);
+
+    /* Create second preview for fullscreen */
+    window_state.preview_fullscreen = editor_preview_create();
+    gtk_box_pack_start(GTK_BOX(preview_fullscreen_vbox), window_state.preview_fullscreen, TRUE, TRUE, 0);
+
+    /* Add fullscreen layout to stack */
+    gtk_stack_add_named(GTK_STACK(window_state.view_stack), preview_fullscreen_vbox, "preview");
+
+    /* Show paned by default */
+    gtk_stack_set_visible_child_name(GTK_STACK(window_state.view_stack), "paned");
+
     /* Create status bar */
     window_state.statusbar_widget = editor_statusbar_create();
-    gtk_box_pack_start(GTK_BOX(vbox), window_state.statusbar_widget, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.main_vbox), window_state.statusbar_widget, FALSE, FALSE, 0);
 
     /* Create error panel (initially hidden) */
     window_state.error_panel_widget = editor_error_panel_create();
-    gtk_box_pack_start(GTK_BOX(vbox), window_state.error_panel_widget, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(window_state.main_vbox), window_state.error_panel_widget, FALSE, FALSE, 0);
 
     /* Set error click callback on status bar */
     editor_statusbar_set_error_click_callback(on_error_status_clicked, NULL);
