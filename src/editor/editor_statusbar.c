@@ -128,14 +128,10 @@ void editor_statusbar_set_fps(double fps) {
         return;
     }
 
-    if (fps > 0.0) {
-        char markup[128];
-        snprintf(markup, sizeof(markup),
-                 "<span foreground='#00FF41'>⚡ FPS: %.0f</span>", fps);
-        gtk_label_set_markup(GTK_LABEL(statusbar_state.fps_label), markup);
-    } else {
-        gtk_label_set_markup(GTK_LABEL(statusbar_state.fps_label), "");
-    }
+    char markup[128];
+    snprintf(markup, sizeof(markup),
+             "<span foreground='#00FF41'>⚡ FPS: %.0f</span>", fps);
+    gtk_label_set_markup(GTK_LABEL(statusbar_state.fps_label), markup);
 }
 
 void editor_statusbar_set_cursor_position(int line, int column) {

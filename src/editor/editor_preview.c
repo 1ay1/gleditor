@@ -33,7 +33,7 @@ static struct {
     double current_fps;
     double last_fps_time;
     int frame_count;
-    guint animation_timer_id;
+    guint tick_callback_id;
     editor_preview_error_callback_t error_callback;
     gpointer error_callback_data;
     char *error_message;
@@ -54,7 +54,7 @@ static struct {
     .current_fps = 0.0,
     .last_fps_time = 0.0,
     .frame_count = 0,
-    .animation_timer_id = 0,
+    .tick_callback_id = 0,
     .error_callback = NULL,
     .error_callback_data = NULL,
     .error_message = NULL,
@@ -93,14 +93,18 @@ static void clear_error(void) {
     preview_state.has_error = false;
 }
 
-/* Animation timer callback */
-static gboolean animation_timer_cb(gpointer user_data) {
+/* Render tick callback - invalidates the GL area to trigger continuous rendering */
+static gboolean render_tick_callback(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data) {
+    (void)frame_clock;
     (void)user_data;
-    if (preview_state.gl_area) {
-        gtk_widget_queue_draw(preview_state.gl_area);
-    }
+
+    /* Invalidate the GL area to trigger a render on this frame */
+    gtk_gl_area_queue_render(GTK_GL_AREA(widget));
+
     return G_SOURCE_CONTINUE;
 }
+
+
 
 /* OpenGL realize callback - called when GL context is created */
 static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
@@ -131,9 +135,23 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     preview_state.gl_initialized = true;
-    preview_state.start_time = get_time();
-    preview_state.last_fps_time = preview_state.start_time;
-    preview_state.frame_count = 0;
+
+    /* Initialize timing if not already done */
+    if (preview_state.start_time == 0.0) {
+        preview_state.start_time = get_time();
+        preview_state.last_fps_time = preview_state.start_time;
+        preview_state.frame_count = 0;
+    }
+
+    /* Add tick callback for continuous rendering now that widget is realized */
+    if (preview_state.tick_callback_id == 0) {
+        preview_state.tick_callback_id = gtk_widget_add_tick_callback(
+            GTK_WIDGET(area),
+            render_tick_callback,
+            NULL,
+            NULL
+        );
+    }
 
     clear_error();
 }
@@ -142,6 +160,18 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
 static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer user_data) {
     (void)context;
     (void)user_data;
+
+    /* Update FPS counter (do this first, even if no shader) */
+    preview_state.frame_count++;
+    double current = get_time();
+    double elapsed = current - preview_state.last_fps_time;
+
+    /* Update FPS more frequently (every 0.1 seconds) for smoother display */
+    if (elapsed >= 0.1) {
+        preview_state.current_fps = preview_state.frame_count / elapsed;
+        preview_state.frame_count = 0;
+        preview_state.last_fps_time = current;
+    }
 
     /* Default background if no shader */
     if (!preview_state.gl_initialized || !preview_state.shader_valid ||
@@ -223,15 +253,6 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
 
     glDisableVertexAttribArray(0);
 
-    /* Update FPS counter */
-    preview_state.frame_count++;
-    double current = get_time();
-    if (current - preview_state.last_fps_time >= 1.0) {
-        preview_state.current_fps = preview_state.frame_count / (current - preview_state.last_fps_time);
-        preview_state.frame_count = 0;
-        preview_state.last_fps_time = current;
-    }
-
     return TRUE;
 }
 
@@ -245,10 +266,10 @@ static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
         return;
     }
 
-    /* Stop animation timer */
-    if (preview_state.animation_timer_id) {
-        g_source_remove(preview_state.animation_timer_id);
-        preview_state.animation_timer_id = 0;
+    /* Remove tick callback */
+    if (preview_state.tick_callback_id > 0) {
+        gtk_widget_remove_tick_callback(GTK_WIDGET(area), preview_state.tick_callback_id);
+        preview_state.tick_callback_id = 0;
     }
 
     /* Free OpenGL resources */
@@ -308,6 +329,9 @@ GtkWidget *editor_preview_create(void) {
     gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(preview_state.gl_area), FALSE);
     gtk_gl_area_set_has_stencil_buffer(GTK_GL_AREA(preview_state.gl_area), FALSE);
 
+    /* Disable auto-render, we'll use tick callback + queue_render for precise control */
+    gtk_gl_area_set_auto_render(GTK_GL_AREA(preview_state.gl_area), FALSE);
+
     /* Connect OpenGL signals */
     g_signal_connect(preview_state.gl_area, "realize",
                      G_CALLBACK(on_gl_realize), NULL);
@@ -321,8 +345,12 @@ GtkWidget *editor_preview_create(void) {
     g_signal_connect(preview_state.gl_area, "motion-notify-event",
                      G_CALLBACK(on_preview_motion), NULL);
 
-    /* Start animation timer (60 FPS) */
-    preview_state.animation_timer_id = g_timeout_add(16, animation_timer_cb, NULL);
+    /* Initialize FPS timing */
+    preview_state.start_time = get_time();
+    preview_state.last_fps_time = preview_state.start_time;
+    preview_state.frame_count = 0;
+
+    /* Tick callback will be added when widget is realized */
 
     return preview_state.gl_area;
 }
@@ -458,10 +486,10 @@ void editor_preview_queue_render(void) {
 }
 
 void editor_preview_destroy(void) {
-    /* Stop animation timer */
-    if (preview_state.animation_timer_id) {
-        g_source_remove(preview_state.animation_timer_id);
-        preview_state.animation_timer_id = 0;
+    /* Remove tick callback if still active */
+    if (preview_state.tick_callback_id > 0 && preview_state.gl_area) {
+        gtk_widget_remove_tick_callback(preview_state.gl_area, preview_state.tick_callback_id);
+        preview_state.tick_callback_id = 0;
     }
 
     /* Cleanup is handled by GTK/OpenGL unrealize callback */
