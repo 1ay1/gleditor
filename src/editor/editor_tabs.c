@@ -5,6 +5,7 @@
 #include "editor_tabs.h"
 #include <stdlib.h>
 #include <string.h>
+#include <glib.h>
 
 /* Maximum number of tabs */
 #define MAX_TABS 20
@@ -379,4 +380,158 @@ void editor_tabs_cleanup(void) {
     state.tab_count = 0;
     state.current_tab_id = -1;
     state.initialized = false;
+}
+
+bool editor_tabs_save_session(void) {
+    if (!state.initialized) return false;
+
+    /* Get config directory */
+    const char *home = g_getenv("HOME");
+    if (!home) return false;
+
+    char *config_dir = g_build_filename(home, ".config", "gleditor", NULL);
+    char *session_file = g_build_filename(config_dir, "tabs_session.ini", NULL);
+
+    /* Create config directory if it doesn't exist */
+    g_mkdir_with_parents(config_dir, 0755);
+
+    GKeyFile *keyfile = g_key_file_new();
+
+    /* Save each tab */
+    for (int i = 0; i < state.tab_count; i++) {
+        Tab *tab = &state.tabs[i];
+        char group[32];
+        snprintf(group, sizeof(group), "Tab%d", i);
+
+        /* Save basic info */
+        g_key_file_set_string(keyfile, group, "title", tab->title);
+        g_key_file_set_boolean(keyfile, group, "is_active", tab->is_active);
+        g_key_file_set_boolean(keyfile, group, "is_modified", tab->is_modified);
+
+        /* Save file path if it exists */
+        if (tab->file_path) {
+            g_key_file_set_string(keyfile, group, "file_path", tab->file_path);
+        }
+
+        /* Save code (always save, even if file exists, in case of unsaved changes) */
+        if (tab->code) {
+            g_key_file_set_string(keyfile, group, "code", tab->code);
+        }
+    }
+
+    /* Save tab count */
+    g_key_file_set_integer(keyfile, "Session", "tab_count", state.tab_count);
+    g_key_file_set_integer(keyfile, "Session", "current_tab_id", state.current_tab_id);
+
+    /* Write to file */
+    GError *error = NULL;
+    gboolean success = g_key_file_save_to_file(keyfile, session_file, &error);
+
+    if (!success && error) {
+        g_warning("Failed to save tab session: %s", error->message);
+        g_error_free(error);
+    }
+
+    g_key_file_free(keyfile);
+    g_free(config_dir);
+    g_free(session_file);
+
+    return success;
+}
+
+bool editor_tabs_restore_session(void) {
+    if (!state.initialized) return false;
+
+    /* Get config directory */
+    const char *home = g_getenv("HOME");
+    if (!home) return false;
+
+    char *session_file = g_build_filename(home, ".config", "gleditor", "tabs_session.ini", NULL);
+
+    /* Check if session file exists */
+    if (!g_file_test(session_file, G_FILE_TEST_EXISTS)) {
+        g_free(session_file);
+        return false;
+    }
+
+    GKeyFile *keyfile = g_key_file_new();
+    GError *error = NULL;
+
+    if (!g_key_file_load_from_file(keyfile, session_file, G_KEY_FILE_NONE, &error)) {
+        g_warning("Failed to load tab session: %s", error ? error->message : "unknown error");
+        if (error) g_error_free(error);
+        g_key_file_free(keyfile);
+        g_free(session_file);
+        return false;
+    }
+
+    /* Get tab count */
+    int tab_count = g_key_file_get_integer(keyfile, "Session", "tab_count", &error);
+    if (error) {
+        g_error_free(error);
+        error = NULL;
+        tab_count = 0;
+    }
+
+    int saved_current_tab_id = g_key_file_get_integer(keyfile, "Session", "current_tab_id", &error);
+    if (error) {
+        g_error_free(error);
+        error = NULL;
+        saved_current_tab_id = -1;
+    }
+
+    /* Restore each tab */
+    int restored_current_index = -1;
+    for (int i = 0; i < tab_count && i < MAX_TABS; i++) {
+        char group[32];
+        snprintf(group, sizeof(group), "Tab%d", i);
+
+        /* Get tab info */
+        char *title = g_key_file_get_string(keyfile, group, "title", NULL);
+        char *file_path = g_key_file_get_string(keyfile, group, "file_path", NULL);
+        char *code = g_key_file_get_string(keyfile, group, "code", NULL);
+        gboolean was_active = g_key_file_get_boolean(keyfile, group, "is_active", NULL);
+
+        /* Create tab */
+        int tab_id = -1;
+        if (file_path && g_file_test(file_path, G_FILE_TEST_EXISTS)) {
+            /* File still exists, load from file */
+            GError *file_error = NULL;
+            char *file_contents = NULL;
+            if (g_file_get_contents(file_path, &file_contents, NULL, &file_error)) {
+                tab_id = editor_tabs_new(title, file_contents);
+                if (tab_id >= 0) {
+                    editor_tabs_set_file_path(tab_id, file_path);
+                    editor_tabs_set_modified(tab_id, false);
+                }
+                g_free(file_contents);
+            } else {
+                /* File couldn't be read, use saved code */
+                tab_id = editor_tabs_new(title, code);
+                if (file_error) g_error_free(file_error);
+            }
+        } else if (code) {
+            /* No file path or file doesn't exist, use saved code */
+            tab_id = editor_tabs_new(title, code);
+        }
+
+        /* Track which tab should be active */
+        if (was_active && tab_id >= 0) {
+            restored_current_index = state.tab_count - 1;
+        }
+
+        g_free(title);
+        g_free(file_path);
+        g_free(code);
+    }
+
+    /* Switch to previously active tab */
+    if (restored_current_index >= 0 && restored_current_index < state.tab_count) {
+        gtk_notebook_set_current_page(state.notebook, restored_current_index);
+    }
+
+    g_key_file_free(keyfile);
+    g_free(session_file);
+
+    return state.tab_count > 0;
 }

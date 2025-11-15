@@ -160,4 +160,18 @@ GtkWidget *editor_tabs_get_notebook(void);
  */
 void editor_tabs_cleanup(void);
 
+/**
+ * Save current tab session to file
+ * 
+ * @return true on success
+ */
+bool editor_tabs_save_session(void);
+
+/**
+ * Restore tab session from file
+ * 
+ * @return true on success
+ */
+bool editor_tabs_restore_session(void);
+
 #endif /* EDITOR_TABS_H */

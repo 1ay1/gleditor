@@ -55,6 +55,8 @@ void editor_settings_save(const EditorSettings *settings) {
     fprintf(f, "auto_compile=%d\n", settings->auto_compile ? 1 : 0);
     fprintf(f, "# Preview\n");
     fprintf(f, "preview_fps=%d\n", settings->preview_fps);
+    fprintf(f, "# Session\n");
+    fprintf(f, "remember_open_tabs=%d\n", settings->remember_open_tabs ? 1 : 0);
     fprintf(f, "shader_speed=%.2f\n", settings->shader_speed);
     fprintf(f, "# Layout\n");
     fprintf(f, "split_orientation=%d\n", settings->split_orientation);
@@ -91,6 +93,7 @@ void editor_settings_load(EditorSettings *settings) {
     settings->preview_fps = 60;
     settings->shader_speed = 1.0;
     settings->split_orientation = SPLIT_HORIZONTAL;
+    settings->remember_open_tabs = true;
 
     const char *home = getenv("HOME");
     if (!home) return;
@@ -168,6 +171,8 @@ void editor_settings_load(EditorSettings *settings) {
             settings->auto_completion = (value != 0);
         } else if (sscanf(line, "auto_compile=%d", &value) == 1) {
             settings->auto_compile = (value != 0);
+        } else if (sscanf(line, "remember_open_tabs=%d", &value) == 1) {
+            settings->remember_open_tabs = (value != 0);
         } else if (sscanf(line, "preview_fps=%d", &value) == 1) {
             if (value >= 15 && value <= 120) {
                 settings->preview_fps = value;
@@ -245,6 +250,16 @@ static void on_auto_compile_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer d
     (void)pspec;
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->auto_compile = gtk_switch_get_active(sw);
+    editor_settings_save(cb_data->settings);
+    if (cb_data->on_change) {
+        cb_data->on_change(cb_data->settings, cb_data->user_data);
+    }
+}
+
+static void on_remember_tabs_toggled(GtkSwitch *sw, GParamSpec *pspec, gpointer data) {
+    (void)pspec;
+    SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
+    cb_data->settings->remember_open_tabs = gtk_switch_get_active(sw);
     editor_settings_save(cb_data->settings);
     if (cb_data->on_change) {
         cb_data->on_change(cb_data->settings, cb_data->user_data);
@@ -702,6 +717,18 @@ void editor_settings_show_dialog(GtkWindow *parent,
     gtk_widget_set_tooltip_text(completion_switch, "Enable code completion for GLSL keywords and functions");
     g_signal_connect(completion_switch, "notify::active", G_CALLBACK(on_auto_completion_toggled), &cb_data);
     gtk_grid_attach(GTK_GRID(behavior_grid), completion_switch, 1, row, 1, 1);
+    row++;
+
+    /* Remember open tabs */
+    GtkWidget *remember_tabs_label = gtk_label_new("Remember Open Tabs:");
+    gtk_widget_set_halign(remember_tabs_label, GTK_ALIGN_END);
+    gtk_grid_attach(GTK_GRID(behavior_grid), remember_tabs_label, 0, row, 1, 1);
+
+    GtkWidget *remember_tabs_switch = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(remember_tabs_switch), settings->remember_open_tabs);
+    gtk_widget_set_tooltip_text(remember_tabs_switch, "Restore open tabs when starting the editor");
+    g_signal_connect(remember_tabs_switch, "notify::active", G_CALLBACK(on_remember_tabs_toggled), &cb_data);
+    gtk_grid_attach(GTK_GRID(behavior_grid), remember_tabs_switch, 1, row, 1, 1);
     row++;
 
     /* ===== PREVIEW TAB ===== */

@@ -639,6 +639,11 @@ static gboolean on_delete_event(GtkWidget *widget, GdkEvent *event, gpointer use
     (void)event;
     (void)user_data;
 
+    /* Save tab session if enabled */
+    if (editor_settings.remember_open_tabs) {
+        editor_tabs_save_session();
+    }
+
     /* Check if any tabs have unsaved changes */
     int tab_count = editor_tabs_get_count();
     for (int i = 0; i < tab_count; i++) {
@@ -771,12 +776,20 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     editor_text_set_change_callback(on_text_changed, NULL);
     editor_text_set_cursor_callback(on_cursor_moved, NULL);
 
-    /* Create initial tab with default shader */
-    int initial_tab = editor_tabs_new("Untitled", default_shader);
+    /* Restore tabs from session or create initial tab */
+    bool restored = false;
+    if (editor_settings.remember_open_tabs) {
+        restored = editor_tabs_restore_session();
+    }
 
-    /* Manually trigger tab changed callback since GTK doesn't fire switch-page for first tab */
-    if (initial_tab >= 0) {
-        on_tab_changed(initial_tab, NULL);
+    if (!restored) {
+        /* Create initial tab with default shader if no session restored */
+        int initial_tab = editor_tabs_new("Untitled", default_shader);
+
+        /* Manually trigger tab changed callback since GTK doesn't fire switch-page for first tab */
+        if (initial_tab >= 0) {
+            on_tab_changed(initial_tab, NULL);
+        }
     }
 
     /* Initialize keyboard shortcuts */
@@ -826,6 +839,11 @@ void editor_window_show(GtkApplication *app) {
 void editor_window_close(void) {
     if (!window_state.is_open) {
         return;
+    }
+
+    /* Save tab session if enabled */
+    if (editor_settings.remember_open_tabs) {
+        editor_tabs_save_session();
     }
 
     /* Close all tabs (each will prompt if modified) */

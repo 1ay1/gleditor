@@ -55,6 +55,9 @@ typedef struct {
     
     /* Layout */
     SplitOrientation split_orientation;
+    
+    /* Session */
+    bool remember_open_tabs;
 } EditorSettings;
 
 /* Default settings */
@@ -82,7 +85,8 @@ typedef struct {
     .auto_compile = true, \
     .preview_fps = 60, \
     .shader_speed = 1.0, \
-    .split_orientation = SPLIT_HORIZONTAL \
+    .split_orientation = SPLIT_HORIZONTAL, \
+    .remember_open_tabs = true \
 }
 
 /**
