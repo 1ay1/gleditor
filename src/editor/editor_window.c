@@ -10,6 +10,7 @@
 #include "editor_settings.h"
 #include "editor_error_panel.h"
 #include "editor_help.h"
+#include "keyboard_shortcuts.h"
 #include "file_operations.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -250,23 +251,19 @@ static void on_help_clicked(gpointer user_data) {
     editor_help_show_dialog(GTK_WINDOW(window_state.window));
 }
 
-static gboolean on_key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data) {
-    (void)widget;
+static void on_toggle_error_panel(gpointer user_data) {
     (void)user_data;
 
-    /* F1 - Help */
-    if (event->keyval == GDK_KEY_F1) {
-        on_help_clicked(NULL);
-        return TRUE;
+    /* Toggle error panel visibility */
+    if (window_state.error_panel_widget) {
+        gboolean visible = gtk_widget_get_visible(window_state.error_panel_widget);
+        if (visible) {
+            editor_error_panel_hide();
+        } else {
+            /* Show with empty message - will show last error or "No errors" */
+            editor_error_panel_show("");
+        }
     }
-
-    /* Ctrl+, - Settings */
-    if ((event->state & GDK_CONTROL_MASK) && event->keyval == GDK_KEY_comma) {
-        on_settings_clicked(NULL);
-        return TRUE;
-    }
-
-    return FALSE;
 }
 
 static void on_toggle_split_clicked(gpointer user_data) {
@@ -515,7 +512,6 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     gtk_window_set_default_size(GTK_WINDOW(window_state.window), width, height);
     g_signal_connect(window_state.window, "delete-event", G_CALLBACK(on_delete_event), NULL);
     g_signal_connect(window_state.window, "destroy", G_CALLBACK(on_destroy), NULL);
-    g_signal_connect(window_state.window, "key-press-event", G_CALLBACK(on_key_press), NULL);
 
     /* Create main container */
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -597,6 +593,24 @@ GtkWidget *editor_window_create(GtkApplication *app, const editor_window_config_
     /* Now connect text change callbacks after initial content is loaded */
     editor_text_set_change_callback(on_text_changed, NULL);
     editor_text_set_cursor_callback(on_cursor_moved, NULL);
+
+    /* Initialize keyboard shortcuts */
+    keyboard_shortcuts_callbacks_t shortcuts_callbacks = {
+        .on_new = on_new_clicked,
+        .on_open = on_load_clicked,
+        .on_save = on_save_clicked,
+        .on_save_as = NULL,  /* TODO: Implement save as */
+        .on_close = on_new_clicked,  /* Close = New for now */
+        .on_exit = on_exit_clicked,
+        .on_compile = on_compile_clicked,
+        .on_toggle_error_panel = on_toggle_error_panel,
+        .on_toggle_split = on_toggle_split_clicked,
+        .on_view_mode_changed = on_view_mode_changed,
+        .on_settings = on_settings_clicked,
+        .on_help = on_help_clicked,
+        .user_data = NULL
+    };
+    keyboard_shortcuts_init(window_state.window, &shortcuts_callbacks);
 
     /* Start FPS update timer */
     window_state.fps_update_id = g_timeout_add(100, update_fps_timer, NULL);
