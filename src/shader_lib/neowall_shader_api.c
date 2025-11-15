@@ -158,6 +158,18 @@ void neowall_shader_set_uniforms(
         glUniform2f(loc_resolution, (float)width, (float)height);
     }
 
+    /* Set mouse uniform (default to 0,0,0,0) */
+    GLint loc_mouse = glGetUniformLocation(program, "_neowall_mouse");
+    if (loc_mouse >= 0) {
+        glUniform4f(loc_mouse, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
+    /* Set frame counter uniform (increments with time) */
+    GLint loc_frame = glGetUniformLocation(program, "_neowall_frame");
+    if (loc_frame >= 0) {
+        glUniform1i(loc_frame, (int)(time * 60.0f)); /* Approximate frame count at 60fps */
+    }
+
     /* Set iResolution uniform (vec3) */
     GLint loc_iresolution = glGetUniformLocation(program, "iResolution");
     if (loc_iresolution >= 0) {

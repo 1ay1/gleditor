@@ -224,6 +224,19 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
         glUniform2f(loc, (float)width, (float)height);
     }
 
+    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_mouse");
+    if (loc >= 0) {
+        glUniform4f(loc,
+                    preview_state.mouse_x * width,
+                    preview_state.mouse_y * height,
+                    0.0f, 0.0f);
+    }
+
+    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_frame");
+    if (loc >= 0) {
+        glUniform1i(loc, preview_state.frame_count);
+    }
+
     /* Set Shadertoy uniforms for compatibility */
     loc = glGetUniformLocation(preview_state.shader_program, "iResolution");
     if (loc >= 0) {
