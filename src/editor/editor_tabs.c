@@ -205,6 +205,10 @@ int editor_tabs_new(const char *title, const char *code) {
     /* Switch to new tab */
     gtk_notebook_set_current_page(state.notebook, page_num);
 
+    /* Set as current tab (GTK doesn't fire switch-page for first tab) */
+    state.current_tab_id = tab->tab_id;
+    tab->is_active = true;
+
     return tab->tab_id;
 }
 
