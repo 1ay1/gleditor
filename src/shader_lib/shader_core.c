@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "platform_compat.h"
 #include <GLES2/gl2.h>
 #include <ctype.h>
 #include <stdarg.h>

@@ -3,6 +3,7 @@
  */
 
 #include "editor_tabs.h"
+#include "platform_compat.h"
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
@@ -386,14 +387,16 @@ bool editor_tabs_save_session(void) {
     if (!state.initialized) return false;
 
     /* Get config directory */
-    const char *home = g_getenv("HOME");
-    if (!home) return false;
-
-    char *config_dir = g_build_filename(home, ".config", "gleditor", NULL);
-    char *session_file = g_build_filename(config_dir, "tabs_session.ini", NULL);
+    char config_dir[PATH_MAX];
+    platform_get_config_dir(config_dir, sizeof(config_dir));
 
     /* Create config directory if it doesn't exist */
-    g_mkdir_with_parents(config_dir, 0755);
+    platform_mkdir_recursive(config_dir);
+
+    char session_path[PATH_MAX];
+    platform_path_join(session_path, sizeof(session_path), config_dir, "tabs_session.ini");
+
+    char *session_file = g_strdup(session_path);
 
     GKeyFile *keyfile = g_key_file_new();
 
@@ -443,10 +446,13 @@ bool editor_tabs_restore_session(void) {
     if (!state.initialized) return false;
 
     /* Get config directory */
-    const char *home = g_getenv("HOME");
-    if (!home) return false;
+    char config_dir[PATH_MAX];
+    platform_get_config_dir(config_dir, sizeof(config_dir));
 
-    char *session_file = g_build_filename(home, ".config", "gleditor", "tabs_session.ini", NULL);
+    char session_path[PATH_MAX];
+    platform_path_join(session_path, sizeof(session_path), config_dir, "tabs_session.ini");
+
+    char *session_file = g_strdup(session_path);
 
     /* Check if session file exists */
     if (!g_file_test(session_file, G_FILE_TEST_EXISTS)) {

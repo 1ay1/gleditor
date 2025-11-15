@@ -3,27 +3,23 @@
  */
 
 #include "editor_settings.h"
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-
-#define SETTINGS_FILE ".config/gleditor/settings.conf"
 
 /* Save settings to config file */
 void editor_settings_save(const EditorSettings *settings) {
     if (!settings) return;
 
-    const char *home = getenv("HOME");
-    if (!home) return;
-
-    char config_path[512];
-    snprintf(config_path, sizeof(config_path), "%s/%s", home, SETTINGS_FILE);
+    char config_dir[PATH_MAX];
+    platform_get_config_dir(config_dir, sizeof(config_dir));
 
     /* Create directory if it doesn't exist */
-    char dir_path[512];
-    snprintf(dir_path, sizeof(dir_path), "%s/.config/gleditor", home);
-    mkdir(dir_path, 0755);
+    platform_mkdir_recursive(config_dir);
+
+    char config_path[PATH_MAX];
+    platform_path_join(config_path, sizeof(config_path), config_dir, "settings.conf");
 
     FILE *f = fopen(config_path, "w");
     if (!f) return;
@@ -95,11 +91,11 @@ void editor_settings_load(EditorSettings *settings) {
     settings->split_orientation = SPLIT_HORIZONTAL;
     settings->remember_open_tabs = true;
 
-    const char *home = getenv("HOME");
-    if (!home) return;
+    char config_dir[PATH_MAX];
+    platform_get_config_dir(config_dir, sizeof(config_dir));
 
-    char config_path[512];
-    snprintf(config_path, sizeof(config_path), "%s/%s", home, SETTINGS_FILE);
+    char config_path[PATH_MAX];
+    platform_path_join(config_path, sizeof(config_path), config_dir, "settings.conf");
 
     FILE *f = fopen(config_path, "r");
     if (!f) return;

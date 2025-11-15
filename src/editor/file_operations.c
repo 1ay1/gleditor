@@ -3,14 +3,20 @@
  */
 
 #include "file_operations.h"
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <errno.h>
 
-#define NEOWALL_SHADER_DIR ".config/neowall/shaders"
+/* NeoWall shader directory (relative to home) */
+#ifdef PLATFORM_WINDOWS
+    #define NEOWALL_SHADER_DIR "AppData\\Roaming\\neowall\\shaders"
+#elif defined(PLATFORM_MACOS)
+    #define NEOWALL_SHADER_DIR "Library/Application Support/neowall/shaders"
+#else
+    #define NEOWALL_SHADER_DIR ".config/neowall/shaders"
+#endif
 
 /* Public API */
 

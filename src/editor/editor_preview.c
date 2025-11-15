@@ -4,10 +4,10 @@
 
 #include "editor_preview.h"
 #include "../shader_lib/neowall_shader_api.h"
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 #include <math.h>
 
 #ifdef HAVE_GLES3
@@ -63,9 +63,7 @@ static struct {
 
 /* Helper: Get current time in seconds */
 static double get_time(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+    return platform_get_time();
 }
 
 /* Helper: Set error message */

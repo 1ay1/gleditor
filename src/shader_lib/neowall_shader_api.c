@@ -5,9 +5,9 @@
 #include "neowall_shader_api.h"
 #include "shader.h"
 #include "shader_log.h"
+#include "platform_compat.h"
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 /**
  * Compile a shader from source code
