@@ -163,11 +163,11 @@ static char *run_command(const char *cmd) {
     if (!fp) {
         return NULL;
     }
-    
+
     char *output = NULL;
     size_t output_size = 0;
     char buffer[256];
-    
+
     while (fgets(buffer, sizeof(buffer), fp) != NULL) {
         size_t len = strlen(buffer);
         char *new_output = realloc(output, output_size + len + 1);
@@ -180,7 +180,7 @@ static char *run_command(const char *cmd) {
         memcpy(output + output_size, buffer, len + 1);
         output_size += len;
     }
-    
+
     pclose(fp);
     return output;
 }
@@ -191,6 +191,7 @@ static int find_shader_index(const char *list_output, const char *shader_filenam
         return -1;
     }
     
+
     /* Look for [index] shader_filename pattern */
     const char *line = list_output;
     while (line && *line) {
@@ -201,11 +202,11 @@ static int find_shader_index(const char *list_output, const char *shader_filenam
             if (bracket_end) {
                 /* Extract index */
                 int index = atoi(bracket_start + 1);
-                
+
                 /* Check if this line contains our shader filename */
                 const char *line_end = strchr(line, '\n');
                 size_t line_len = line_end ? (size_t)(line_end - line) : strlen(line);
-                
+
                 /* Create a temporary buffer for this line */
                 char *line_copy = g_strndup(line, line_len);
                 if (line_copy && strstr(line_copy, shader_filename)) {
@@ -215,12 +216,12 @@ static int find_shader_index(const char *list_output, const char *shader_filenam
                 g_free(line_copy);
             }
         }
-        
+
         /* Move to next line */
         const char *next = strchr(line, '\n');
         line = next ? next + 1 : NULL;
     }
-    
+
     return -1;
 }
 
@@ -250,7 +251,7 @@ bool file_operations_install_to_neowall(const char *shader_code,
     if (len > 5 && strcmp(base_name + len - 5, ".glsl") == 0) {
         base_name[len - 5] = '\0';
     }
-    
+
     char *shader_filename = g_strdup_printf("%s.glsl", base_name);
     char *shader_path = g_strdup_printf("%s/%s", shader_dir, shader_filename);
     g_free(base_name);
@@ -267,30 +268,38 @@ bool file_operations_install_to_neowall(const char *shader_code,
 
     /* Step 1: Kill neowall daemon to reload config */
     system("neowall kill 2>/dev/null");
-    
+
     /* Give it a moment to stop */
-    g_usleep(300000); /* 300ms */
+    g_usleep(500000); /* 500ms */
 
     /* Step 2: Start neowall daemon again */
     system("neowall &");
-    
+
     /* Wait for daemon to start and load wallpapers */
-    g_usleep(1500000); /* 1.5 seconds */
+    g_usleep(2500000); /* 2.5 seconds */
 
-    /* Step 3: Get the list of wallpapers */
-    char *list_output = run_command("neowall list 2>/dev/null");
-
-    if (list_output) {
-        /* Step 4: Find the shader's index */
-        int index = find_shader_index(list_output, shader_filename);
-        free(list_output);
-
-        if (index >= 0) {
-            /* Step 5: Set the shader as current wallpaper */
-            char *set_cmd = g_strdup_printf("neowall set %d", index);
-            system(set_cmd);
-            g_free(set_cmd);
+    /* Step 3: Get the list of wallpapers with retry */
+    char *list_output = NULL;
+    int index = -1;
+    
+    /* Retry up to 3 times with increasing delays */
+    for (int attempt = 0; attempt < 3 && index < 0; attempt++) {
+        if (attempt > 0) {
+            g_usleep(1000000); /* Wait 1 second between retries */
         }
+        
+        list_output = run_command("neowall list 2>/dev/null");
+        if (list_output) {
+            index = find_shader_index(list_output, shader_filename);
+            free(list_output);
+        }
+    }
+
+    if (index >= 0) {
+        /* Step 4: Set the shader as current wallpaper */
+        char *set_cmd = g_strdup_printf("neowall set %d", index);
+        system(set_cmd);
+        g_free(set_cmd);
     }
 
     g_free(shader_filename);
