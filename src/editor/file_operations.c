@@ -157,6 +157,73 @@ char *file_operations_get_neowall_shader_dir(void) {
     return dir_path;
 }
 
+/* Helper to run a command and get its output */
+static char *run_command(const char *cmd) {
+    FILE *fp = popen(cmd, "r");
+    if (!fp) {
+        return NULL;
+    }
+    
+    char *output = NULL;
+    size_t output_size = 0;
+    char buffer[256];
+    
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        size_t len = strlen(buffer);
+        char *new_output = realloc(output, output_size + len + 1);
+        if (!new_output) {
+            free(output);
+            pclose(fp);
+            return NULL;
+        }
+        output = new_output;
+        memcpy(output + output_size, buffer, len + 1);
+        output_size += len;
+    }
+    
+    pclose(fp);
+    return output;
+}
+
+/* Find shader index in neowall list output */
+static int find_shader_index(const char *list_output, const char *shader_filename) {
+    if (!list_output || !shader_filename) {
+        return -1;
+    }
+    
+    /* Look for [index] shader_filename pattern */
+    const char *line = list_output;
+    while (line && *line) {
+        /* Find line with bracket pattern [N] */
+        const char *bracket_start = strstr(line, "[");
+        if (bracket_start) {
+            const char *bracket_end = strstr(bracket_start, "]");
+            if (bracket_end) {
+                /* Extract index */
+                int index = atoi(bracket_start + 1);
+                
+                /* Check if this line contains our shader filename */
+                const char *line_end = strchr(line, '\n');
+                size_t line_len = line_end ? (size_t)(line_end - line) : strlen(line);
+                
+                /* Create a temporary buffer for this line */
+                char *line_copy = g_strndup(line, line_len);
+                if (line_copy && strstr(line_copy, shader_filename)) {
+                    g_free(line_copy);
+                    return index;
+                }
+                g_free(line_copy);
+            }
+        }
+        
+        /* Move to next line */
+        const char *next = strchr(line, '\n');
+        line = next ? next + 1 : NULL;
+    }
+    
+    return -1;
+}
+
 bool file_operations_install_to_neowall(const char *shader_code,
                                         const char *shader_name,
                                         char **error) {
@@ -176,15 +243,50 @@ bool file_operations_install_to_neowall(const char *shader_code,
         return false;
     }
 
-    /* Construct shader file path */
-    char *shader_path = g_strdup_printf("%s/%s.glsl", shader_dir, shader_name);
+    /* Construct shader file path and filename */
+    char *shader_filename = g_strdup_printf("%s.glsl", shader_name);
+    char *shader_path = g_strdup_printf("%s/%s", shader_dir, shader_filename);
     g_free(shader_dir);
 
     /* Save shader to NeoWall directory */
     bool success = file_operations_save_file(shader_path, shader_code, error);
-
     g_free(shader_path);
-    return success;
+
+    if (!success) {
+        g_free(shader_filename);
+        return false;
+    }
+
+    /* Step 1: Kill neowall daemon to reload config */
+    system("neowall kill 2>/dev/null");
+    
+    /* Give it a moment to restart */
+    g_usleep(500000); /* 500ms */
+
+    /* Step 2: Get the list of wallpapers */
+    char *list_output = run_command("neowall list 2>/dev/null");
+    if (!list_output) {
+        /* NeoWall might not be running, try starting it */
+        system("neowall &");
+        g_usleep(1000000); /* 1 second */
+        list_output = run_command("neowall list 2>/dev/null");
+    }
+
+    if (list_output) {
+        /* Step 3: Find the shader's index */
+        int index = find_shader_index(list_output, shader_filename);
+        free(list_output);
+
+        if (index >= 0) {
+            /* Step 4: Set the shader as current wallpaper */
+            char *set_cmd = g_strdup_printf("neowall set %d", index);
+            system(set_cmd);
+            g_free(set_cmd);
+        }
+    }
+
+    g_free(shader_filename);
+    return true;
 }
 
 bool file_operations_file_exists(const char *path) {

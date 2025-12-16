@@ -1,8 +1,9 @@
-/* Toolbar Component - Implementation
- * Handles the editor toolbar with action buttons
+/* Editor Toolbar Component - Implementation
+ * Provides the main toolbar with file operations and controls
  */
 
 #include "editor_toolbar.h"
+#include "platform_compat.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -253,11 +254,15 @@ GtkWidget *editor_toolbar_create(const editor_toolbar_callbacks_t *callbacks) {
     /* Separator */
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), create_separator(), FALSE, FALSE, 0);
 
-    /* Installation group */
+    /* Installation group - NeoWall only works on Linux */
+#ifdef PLATFORM_LINUX
     toolbar_state.install_button = create_button("go-jump", "Install to NeoWall");
     gtk_widget_set_tooltip_text(toolbar_state.install_button, "Install shader to NeoWall wallpaper system (Ctrl+I)\nSaves to ~/.config/neowall/shaders/");
     g_signal_connect(toolbar_state.install_button, "clicked", G_CALLBACK(on_install_clicked), NULL);
     gtk_box_pack_start(GTK_BOX(toolbar_state.toolbar), toolbar_state.install_button, FALSE, FALSE, 0);
+#else
+    toolbar_state.install_button = NULL;
+#endif
 
     /* Spacer to push right-aligned buttons to the end */
     GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
