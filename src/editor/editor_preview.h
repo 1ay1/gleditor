@@ -7,12 +7,7 @@
 
 #include <gtk/gtk.h>
 #include <stdbool.h>
-
-#ifdef HAVE_GLES3
-#include <GLES3/gl3.h>
-#else
-#include <GLES2/gl2.h>
-#endif
+#include "platform_compat.h"
 
 /* Preview state callback signatures */
 typedef void (*editor_preview_error_callback_t)(const char *error, gpointer user_data);

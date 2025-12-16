@@ -125,6 +125,7 @@ void editor_settings_load(EditorSettings *settings) {
             }
         } else if (sscanf(line, "theme=%31s", strvalue) == 1) {
             strncpy(settings->theme, strvalue, sizeof(settings->theme) - 1);
+            settings->theme[sizeof(settings->theme) - 1] = '\0';
         } else if (sscanf(line, "show_line_numbers=%d", &value) == 1) {
             settings->show_line_numbers = (value != 0);
         } else if (sscanf(line, "highlight_current_line=%d", &value) == 1) {
@@ -222,6 +223,7 @@ static void on_font_changed(GtkFontButton *font_button, gpointer data) {
     }
 }
 
+static void on_font_size_changed(GtkSpinButton *spin, gpointer data) __attribute__((unused));
 static void on_font_size_changed(GtkSpinButton *spin, gpointer data) {
     SettingsCallbackData *cb_data = (SettingsCallbackData *)data;
     cb_data->settings->font_size = gtk_spin_button_get_value_as_int(spin);

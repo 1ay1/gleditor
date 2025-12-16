@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Suppress GTimeVal deprecation warnings from GtkSourceView headers */
+/* Suppress deprecated function warnings (gtk_widget_override_font, GTimeVal) */
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <gtksourceview/gtksource.h>
-#pragma GCC diagnostic pop
+/* Note: pragma kept open to allow gtk_widget_override_font usage below */
 
 /* Module state */
 static struct {
@@ -495,3 +495,5 @@ void editor_text_destroy(void) {
     editor_state.modified = false;
     editor_state.initialized = false;
 }
+
+#pragma GCC diagnostic pop

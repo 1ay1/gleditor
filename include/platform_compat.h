@@ -28,8 +28,28 @@
     #define PLATFORM_NAME "Unknown"
 #endif
 
+/* ============================================
+ * Unified OpenGL Header Include
+ * ============================================ */
+#ifdef USE_EPOXY
+    /* Windows/macOS: Use libepoxy for function loading */
+    #include <epoxy/gl.h>
+#elif defined(HAVE_GLES3)
+    /* Linux: OpenGL ES 3.x */
+    #include <GLES3/gl3.h>
+#elif defined(HAVE_GLES2)
+    /* Linux: OpenGL ES 2.0 */
+    #include <GLES2/gl2.h>
+#else
+    /* Fallback: Desktop OpenGL */
+    #include <GL/gl.h>
+#endif
+
 /* Windows-specific includes and definitions */
 #ifdef PLATFORM_WINDOWS
+    #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+    #endif
     #include <windows.h>
     #include <direct.h>
     #include <io.h>
@@ -39,7 +59,9 @@
     #define mkdir(path, mode) _mkdir(path)
     #define access(path, mode) _access(path, mode)
     #define getcwd _getcwd
+    #ifndef PATH_MAX
     #define PATH_MAX MAX_PATH
+    #endif
     #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
     
     /* Directory separator */
@@ -133,9 +155,16 @@ static inline int platform_mkdir_recursive(const char *path) {
 }
 
 /* Cross-platform path utilities */
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+#endif
 static inline void platform_path_join(char *dest, size_t dest_size, const char *path1, const char *path2) {
     snprintf(dest, dest_size, "%s%c%s", path1, PATH_SEPARATOR, path2);
 }
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 static inline const char* platform_get_home_dir(void) {
 #ifdef PLATFORM_WINDOWS

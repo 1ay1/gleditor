@@ -497,10 +497,10 @@ bool editor_tabs_restore_session(void) {
     }
 
     int saved_current_tab_id = g_key_file_get_integer(keyfile, "Session", "current_tab_id", &error);
+    (void)saved_current_tab_id; /* Currently unused, tab restoration uses is_active flag */
     if (error) {
         g_error_free(error);
         error = NULL;
-        saved_current_tab_id = -1;
     }
 
     /* Restore each tab */

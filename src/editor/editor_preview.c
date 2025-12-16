@@ -9,12 +9,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
-#ifdef HAVE_GLES3
-#include <GLES3/gl3.h>
+#include <time.h>
+#ifdef _WIN32
+#include <windows.h>
 #else
-#include <GLES2/gl2.h>
+#include <sys/time.h>
 #endif
+
+/* OpenGL headers included via platform_compat.h */
 
 /* Module state */
 static struct {
@@ -132,7 +134,7 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
          1.0f,  1.0f,  /* Top-right */
     };
 
-#ifdef HAVE_GLES3
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
     glGenVertexArrays(1, &preview_state.vao);
     glBindVertexArray(preview_state.vao);
 #endif
@@ -237,6 +239,28 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
         glUniform1i(loc, preview_state.frame_count);
     }
 
+    /* Set _neowall_date uniform (year, month, day, seconds since midnight with sub-second precision) */
+    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_date");
+    if (loc >= 0) {
+#ifdef _WIN32
+        SYSTEMTIME st;
+        GetLocalTime(&st);
+        float year = (float)st.wYear;
+        float month = (float)st.wMonth;
+        float day = (float)st.wDay;
+        float seconds = (float)(st.wHour * 3600 + st.wMinute * 60 + st.wSecond) + (float)st.wMilliseconds / 1000.0f;
+#else
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        struct tm *tm_info = localtime(&tv.tv_sec);
+        float year = (float)(tm_info->tm_year + 1900);
+        float month = (float)(tm_info->tm_mon + 1);
+        float day = (float)tm_info->tm_mday;
+        float seconds = (float)(tm_info->tm_hour * 3600 + tm_info->tm_min * 60 + tm_info->tm_sec) + (float)tv.tv_usec / 1000000.0f;
+#endif
+        glUniform4f(loc, year, month, day, seconds);
+    }
+
     /* Set Shadertoy uniforms for compatibility */
     loc = glGetUniformLocation(preview_state.shader_program, "iResolution");
     if (loc >= 0) {
@@ -268,7 +292,7 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
     }
 
     /* Draw fullscreen quad */
-#ifdef HAVE_GLES3
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
     glBindVertexArray(preview_state.vao);
 #endif
 
@@ -323,7 +347,7 @@ static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
         preview_state.vbo = 0;
     }
 
-#ifdef HAVE_GLES3
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
     if (preview_state.vao != 0) {
         glDeleteVertexArrays(1, &preview_state.vao);
         preview_state.vao = 0;
@@ -571,7 +595,7 @@ void editor_preview_destroy(void) {
                 preview_state.vbo = 0;
             }
 
-#ifdef HAVE_GLES3
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
             if (preview_state.vao != 0) {
                 glDeleteVertexArrays(1, &preview_state.vao);
                 preview_state.vao = 0;

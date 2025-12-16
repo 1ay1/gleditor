@@ -5,6 +5,10 @@
 #include "editor_help.h"
 #include <string.h>
 
+/* Suppress deprecated function warnings (gtk_widget_override_font) */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 /* Help dialog content structure */
 typedef struct {
     const char *category;
@@ -405,3 +409,5 @@ void editor_help_show_dialog(GtkWindow *parent) {
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
 }
+
+#pragma GCC diagnostic pop

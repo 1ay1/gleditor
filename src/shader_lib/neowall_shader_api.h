@@ -8,12 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-
-#ifdef __APPLE__
-#include <OpenGL/gl3.h>
-#else
-#include <GLES2/gl2.h>
-#endif
+#include "platform_compat.h"
 
 /**
  * Shader compilation result

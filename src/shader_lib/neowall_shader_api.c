@@ -35,7 +35,15 @@ neowall_shader_result_t neowall_shader_compile(
     }
 
     /* Save shader to temporary file for shader_create_live_program */
+#ifdef PLATFORM_WINDOWS
+    char temp_path[MAX_PATH];
+    char *temp_dir = getenv("TEMP");
+    if (!temp_dir) temp_dir = getenv("TMP");
+    if (!temp_dir) temp_dir = ".";
+    snprintf(temp_path, sizeof(temp_path), "%s\\neowall_tray_shader_temp.glsl", temp_dir);
+#else
     const char *temp_path = "/tmp/neowall_tray_shader_temp.glsl";
+#endif
     FILE *f = fopen(temp_path, "w");
     if (!f) {
         result.error_message = strdup("Failed to create temporary shader file");

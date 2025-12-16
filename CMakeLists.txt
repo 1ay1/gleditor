@@ -80,11 +80,13 @@ elseif(PLATFORM_MACOS)
     message(STATUS "Using OpenGL with ES compatibility layer on macOS")
 
 elseif(PLATFORM_WINDOWS)
-    # Windows: Try ANGLE or fallback to desktop OpenGL
-    find_package(OpenGL REQUIRED)
-    set(GL_LIBRARIES ${OPENGL_LIBRARIES})
-    add_definitions(-DUSE_OPENGL_COMPAT)
-    message(STATUS "Using OpenGL with ES compatibility layer on Windows")
+    # Windows: Use libepoxy for OpenGL function loading
+    pkg_check_modules(EPOXY REQUIRED epoxy)
+    include_directories(${EPOXY_INCLUDE_DIRS})
+    link_directories(${EPOXY_LIBRARY_DIRS})
+    set(GL_LIBRARIES ${EPOXY_LIBRARIES})
+    add_definitions(-DUSE_EPOXY)
+    message(STATUS "Using libepoxy for OpenGL on Windows")
 endif()
 
 # Math library (needed on some platforms)
