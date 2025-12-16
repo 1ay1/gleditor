@@ -278,7 +278,10 @@ bool file_operations_install_to_neowall(const char *shader_code,
     /* Wait for daemon to start and load wallpapers */
     g_usleep(2500000); /* 2.5 seconds */
 
-    /* Step 3: Get the list of wallpapers with retry */
+    /* Step 3: Pause cycling to prevent auto-cycle from changing wallpaper */
+    system("neowall pause 2>/dev/null");
+
+    /* Step 4: Get the list of wallpapers with retry */
     char *list_output = NULL;
     int index = -1;
     
@@ -296,11 +299,14 @@ bool file_operations_install_to_neowall(const char *shader_code,
     }
 
     if (index >= 0) {
-        /* Step 4: Set the shader as current wallpaper */
+        /* Step 5: Set the shader as current wallpaper */
         char *set_cmd = g_strdup_printf("neowall set %d", index);
         system(set_cmd);
         g_free(set_cmd);
     }
+
+    /* Step 6: Resume cycling */
+    system("neowall resume 2>/dev/null");
 
     g_free(shader_filename);
     return true;
