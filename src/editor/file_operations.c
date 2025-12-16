@@ -275,13 +275,16 @@ bool file_operations_install_to_neowall(const char *shader_code,
     /* Give it a moment to stop */
     g_usleep(500000); /* 500ms */
 
-    /* Step 2: Start neowall daemon again */
+    /* Step 2: Pause cycling BEFORE starting daemon (via environment or immediate command) */
+    /* Start neowall daemon and immediately pause it */
     system("neowall &");
-
-    /* Wait for daemon to start and load wallpapers */
-    g_usleep(2500000); /* 2.5 seconds */
-
-    /* Step 3: Pause cycling to prevent auto-cycle from changing wallpaper */
+    g_usleep(500000); /* 500ms - quick pause to let daemon initialize */
+    system("neowall pause 2>/dev/null");
+    
+    /* Wait for daemon to fully load wallpapers */
+    g_usleep(2000000); /* 2 seconds */
+    
+    /* Pause again in case first one was too early */
     system("neowall pause 2>/dev/null");
 
     /* Step 4: Get the list of wallpapers with retry */
