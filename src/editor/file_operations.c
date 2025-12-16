@@ -266,53 +266,25 @@ bool file_operations_install_to_neowall(const char *shader_code,
         return false;
     }
 
-    /* Ensure file is flushed to disk before restarting NeoWall */
-    sync();
-
-    /* Step 1: Kill neowall daemon to reload config */
+    /* Pause cycling, restart daemon, find and set shader - fast path */
+    system("neowall pause 2>/dev/null");
     system("neowall kill 2>/dev/null");
-
-    /* Give it a moment to stop */
-    g_usleep(500000); /* 500ms */
-
-    /* Step 2: Pause cycling BEFORE starting daemon (via environment or immediate command) */
-    /* Start neowall daemon and immediately pause it */
+    g_usleep(100000); /* 100ms */
     system("neowall &");
-    g_usleep(500000); /* 500ms - quick pause to let daemon initialize */
-    system("neowall pause 2>/dev/null");
-    
-    /* Wait for daemon to fully load wallpapers */
-    g_usleep(2000000); /* 2 seconds */
-    
-    /* Pause again in case first one was too early */
+    g_usleep(500000); /* 500ms for daemon to load */
     system("neowall pause 2>/dev/null");
 
-    /* Step 4: Get the list of wallpapers with retry */
-    char *list_output = NULL;
-    int index = -1;
-    
-    /* Retry up to 3 times with increasing delays */
-    for (int attempt = 0; attempt < 3 && index < 0; attempt++) {
-        if (attempt > 0) {
-            g_usleep(1000000); /* Wait 1 second between retries */
-        }
-        
-        list_output = run_command("neowall list 2>/dev/null");
-        if (list_output) {
-            index = find_shader_index(list_output, shader_filename);
-            free(list_output);
+    /* Get list and set shader */
+    char *list_output = run_command("neowall list 2>/dev/null");
+    if (list_output) {
+        int index = find_shader_index(list_output, shader_filename);
+        free(list_output);
+        if (index >= 0) {
+            char *set_cmd = g_strdup_printf("neowall set %d", index);
+            system(set_cmd);
+            g_free(set_cmd);
         }
     }
-
-    if (index >= 0) {
-        /* Step 5: Set the shader as current wallpaper */
-        char *set_cmd = g_strdup_printf("neowall set %d", index);
-        system(set_cmd);
-        g_free(set_cmd);
-    }
-
-    /* Note: We leave cycling paused so the installed shader stays visible.
-     * User can manually resume with 'neowall resume' if desired. */
 
     g_free(shader_filename);
     return true;
