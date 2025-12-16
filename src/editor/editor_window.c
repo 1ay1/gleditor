@@ -328,9 +328,17 @@ static void on_install_clicked(gpointer user_data) {
     const TabInfo *info = (tab_id >= 0) ? editor_tabs_get_info(tab_id) : NULL;
 
     char *code = editor_text_get_code();
-    const char *name = (info && info->file_path) ?
-                       file_operations_get_filename(info->file_path) :
-                       "custom_shader";
+    char *name = NULL;
+    
+    if (info && info->file_path) {
+        /* Use the existing filename */
+        name = g_strdup(file_operations_get_filename(info->file_path));
+    } else {
+        /* Untitled shader - add timestamp to avoid overwriting */
+        GDateTime *now = g_date_time_new_now_local();
+        name = g_date_time_format(now, "shader_%Y%m%d_%H%M%S");
+        g_date_time_unref(now);
+    }
 
     char *error = NULL;
     if (file_operations_install_to_neowall(code, name, &error)) {
@@ -345,6 +353,7 @@ static void on_install_clicked(gpointer user_data) {
     }
 
     g_free(code);
+    g_free(name);
 }
 
 static void on_settings_clicked(gpointer user_data) {
