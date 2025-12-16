@@ -244,8 +244,16 @@ bool file_operations_install_to_neowall(const char *shader_code,
     }
 
     /* Construct shader file path and filename */
-    char *shader_filename = g_strdup_printf("%s.glsl", shader_name);
+    /* Strip .glsl extension if already present to avoid double extension */
+    char *base_name = g_strdup(shader_name);
+    size_t len = strlen(base_name);
+    if (len > 5 && strcmp(base_name + len - 5, ".glsl") == 0) {
+        base_name[len - 5] = '\0';
+    }
+    
+    char *shader_filename = g_strdup_printf("%s.glsl", base_name);
     char *shader_path = g_strdup_printf("%s/%s", shader_dir, shader_filename);
+    g_free(base_name);
     g_free(shader_dir);
 
     /* Save shader to NeoWall directory */
