@@ -1682,9 +1682,9 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
                                     if (strstr(coord_expr, "getNormal")) {
                                         log_debug("  -> Detected vec3 (contains getNormal)");
                                         is_vec3 = true;
-                                    } else if (strcmp(coord_expr, "n") == 0) {
-                                        /* Single letter 'n' is commonly a normal vector */
-                                        log_debug("  -> Detected vec3 (variable 'n')");
+                                    } else if (strcmp(coord_expr, "n") == 0 || strcmp(coord_expr, "s") == 0) {
+                                        /* Single letter 'n' or 's' is commonly a vec3 (normal or sample coord) */
+                                        log_debug("  -> Detected vec3 (single-letter variable '%s')", coord_expr);
                                         is_vec3 = true;
                                     } else if (strstr(coord_expr, "normal") || strstr(coord_expr, "Normal")) {
                                         /* Contains 'normal' or 'Normal' */
@@ -1703,9 +1703,18 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
                                             /* Check for common vec3 arithmetic patterns */
                                             if (!is_vec3 && (strchr(coord_expr, '+') || strchr(coord_expr, '-') || strchr(coord_expr, '*'))) {
                                                 /* Contains arithmetic - likely vec3 if it has common vec3 variable names */
-                                                if (strstr(coord_expr, " u") || strstr(coord_expr, "u*") || strstr(coord_expr, "u+") || strstr(coord_expr, "u-") ||
+                                                /* Check if expression starts with single-letter vec3 variable */
+                                                bool starts_with_vec3_var = (coord_expr[0] == 'u' || coord_expr[0] == 'o' || 
+                                                                             coord_expr[0] == 'p' || coord_expr[0] == 's' ||
+                                                                             coord_expr[0] == 'n') && 
+                                                                            (coord_expr[1] == ' ' || coord_expr[1] == '*' || 
+                                                                             coord_expr[1] == '+' || coord_expr[1] == '-' ||
+                                                                             coord_expr[1] == '.' || coord_expr[1] == '/');
+                                                if (starts_with_vec3_var ||
+                                                    strstr(coord_expr, " u") || strstr(coord_expr, "u*") || strstr(coord_expr, "u+") || strstr(coord_expr, "u-") ||
                                                     strstr(coord_expr, " o") || strstr(coord_expr, "o*") || strstr(coord_expr, "o+") || strstr(coord_expr, "o-") ||
                                                     strstr(coord_expr, " p") || strstr(coord_expr, "p*") || strstr(coord_expr, "p+") || strstr(coord_expr, "p-") ||
+                                                    strstr(coord_expr, " s") || strstr(coord_expr, "s*") || strstr(coord_expr, "s+") || strstr(coord_expr, "s-") ||
                                                     strstr(coord_expr, "ray") || strstr(coord_expr, "dir") || strstr(coord_expr, "pos")) {
                                                     log_debug("  -> Detected vec3 (arithmetic with vec3-like variables)");
                                                     is_vec3 = true;
@@ -1715,19 +1724,19 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
                                     }
 
                                     if (is_vec3) {
-                                        log_info("Converting texture(iChannel%d, %s) to use directionToUV()", channel_num, coord_expr);
+                                        log_info("Converting texture(iChannel%d, %s) to use .xy extraction", channel_num, coord_expr);
 
                                         /* Copy texture(iChannelN, */
                                         size_t prefix_len = coord_start - src;
                                         strncpy(dst, src, prefix_len);
                                         dst += prefix_len;
 
-                                        /* Wrap coordinate with directionToUV() */
-                                        strcpy(dst, "directionToUV(");
-                                        dst += 14;
+                                        /* Wrap coordinate with parentheses and extract .xy */
+                                        *dst++ = '(';
                                         strcpy(dst, coord_expr);
                                         dst += strlen(coord_expr);
-                                        *dst++ = ')';
+                                        strcpy(dst, ").xy");
+                                        dst += 4;
 
                                         src = coord_end;
                                         made_changes = true;
@@ -1748,7 +1757,7 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
             *dst = '\0';
 
             if (made_changes) {
-                log_info("Applied %d vec3->vec2 texture coordinate conversion(s) for environment mapping", conversion_count);
+                log_info("Applied %d vec3->vec2 texture coordinate conversion(s)", conversion_count);
                 free(wrapped);
                 wrapped = fixed;
             } else {
