@@ -266,6 +266,9 @@ bool file_operations_install_to_neowall(const char *shader_code,
         return false;
     }
 
+    /* Ensure file is flushed to disk before restarting NeoWall */
+    sync();
+
     /* Step 1: Kill neowall daemon to reload config */
     system("neowall kill 2>/dev/null");
 
@@ -305,8 +308,8 @@ bool file_operations_install_to_neowall(const char *shader_code,
         g_free(set_cmd);
     }
 
-    /* Step 6: Resume cycling */
-    system("neowall resume 2>/dev/null");
+    /* Note: We leave cycling paused so the installed shader stays visible.
+     * User can manually resume with 'neowall resume' if desired. */
 
     g_free(shader_filename);
     return true;
