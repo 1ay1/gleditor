@@ -37,8 +37,8 @@ package() {
     # Install desktop file
     install -Dm644 data/gleditor.desktop "$pkgdir/usr/share/applications/gleditor.desktop"
 
-    # Install icon
-    install -Dm644 data/gleditor.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/gleditor.svg"
+    # Install icon (use icon.svg which is 128x128, not gleditor.svg which is 600x200 banner)
+    install -Dm644 data/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/gleditor.svg"
 
     # Install license
     install -Dm644 README.md "$pkgdir/usr/share/licenses/$pkgname/README.md"
