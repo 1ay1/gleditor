@@ -18,7 +18,7 @@
 
 /* Default log level (can be overridden) */
 #ifndef SHADER_LIB_LOG_LEVEL
-#define SHADER_LIB_LOG_LEVEL LOG_LEVEL_INFO
+#define SHADER_LIB_LOG_LEVEL LOG_LEVEL_DEBUG
 #endif
 
 /* Get current timestamp for logging */
@@ -54,5 +54,32 @@ static inline void shader_log(int level, const char *prefix, const char *fmt, ..
 #define log_warn(...)  shader_log(LOG_LEVEL_WARN,  "WARN",  __VA_ARGS__)
 #define log_info(...)  shader_log(LOG_LEVEL_INFO,  "INFO",  __VA_ARGS__)
 #define log_debug(...) shader_log(LOG_LEVEL_DEBUG, "DEBUG", __VA_ARGS__)
+
+/*
+ * log_debug_once - logs only the first N times (default 3)
+ * Useful for per-frame debugging without spamming logs
+ * Usage: log_debug_once(count, "format", args...)
+ * where count is a static counter variable
+ */
+#define LOG_DEBUG_ONCE_MAX 3
+
+#define log_debug_once(counter, ...) do { \
+    if ((counter) < LOG_DEBUG_ONCE_MAX) { \
+        shader_log(LOG_LEVEL_DEBUG, "DEBUG", __VA_ARGS__); \
+        (counter)++; \
+    } \
+} while(0)
+
+/*
+ * log_debug_frame - logs only during first N frames of shader execution
+ * Pass the frame_count from the shader context
+ */
+#define LOG_DEBUG_FRAME_MAX 3
+
+#define log_debug_frame(frame_count, ...) do { \
+    if ((frame_count) < LOG_DEBUG_FRAME_MAX) { \
+        shader_log(LOG_LEVEL_DEBUG, "DEBUG", __VA_ARGS__); \
+    } \
+} while(0)
 
 #endif /* SHADER_LIB_LOG_H */

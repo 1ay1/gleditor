@@ -1,9 +1,11 @@
 /* OpenGL Preview Component - Implementation
  * Handles the live shader preview rendering
+ * Supports Shadertoy-style multipass rendering with BufferA-D
  */
 
 #include "editor_preview.h"
-#include "../shader_lib/neowall_shader_api.h"
+#include "../shader_lib/shader_multipass.h"
+#include "../shader_lib/shader_log.h"
 #include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,13 +23,6 @@
 /* Module state */
 static struct {
     GtkWidget *gl_area;
-    GLuint shader_program;      /* Pass 1: Image */
-    GLuint buffer_program;      /* Pass 0: Buffer A */
-    GLuint buffer_fbo;          /* FBO for Buffer A */
-    GLuint buffer_tex[2];       /* Ping-pong textures for Buffer A */
-    int buffer_width;
-    int buffer_height;
-    int ping_pong_index;
     GLuint vao;
     GLuint vbo;
     GLuint default_texture;
@@ -39,6 +34,7 @@ static struct {
     float time_speed;
     float mouse_x;
     float mouse_y;
+    bool mouse_click;
     double current_fps;
     double last_fps_time;
     int frame_count;
@@ -51,15 +47,12 @@ static struct {
     gpointer double_click_callback_data;
     char *error_message;
     bool has_error;
+    
+    /* Multipass rendering (handles both single and multi-pass shaders) */
+    multipass_shader_t *multipass_shader;
+    char *current_shader_source;
 } preview_state = {
     .gl_area = NULL,
-    .shader_program = 0,
-    .buffer_program = 0,
-    .buffer_fbo = 0,
-    .buffer_tex = {0, 0},
-    .buffer_width = 0,
-    .buffer_height = 0,
-    .ping_pong_index = 0,
     .vao = 0,
     .vbo = 0,
     .default_texture = 0,
@@ -71,6 +64,7 @@ static struct {
     .time_speed = 1.0f,
     .mouse_x = 0.5f,
     .mouse_y = 0.5f,
+    .mouse_click = false,
     .current_fps = 0.0,
     .last_fps_time = 0.0,
     .frame_count = 0,
@@ -82,7 +76,9 @@ static struct {
     .double_click_callback = NULL,
     .double_click_callback_data = NULL,
     .error_message = NULL,
-    .has_error = false
+    .has_error = false,
+    .multipass_shader = NULL,
+    .current_shader_source = NULL
 };
 
 /* Helper: Get current time in seconds */
@@ -179,22 +175,7 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    /* Setup Multipass FBO */
-    glGenFramebuffers(1, &preview_state.buffer_fbo);
-    glGenTextures(2, preview_state.buffer_tex);
-    
-    /* Initialize ping-pong textures */
-    preview_state.buffer_width = 800; /* Default size */
-    preview_state.buffer_height = 450;
-    
-    for (int i = 0; i < 2; i++) {
-        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, preview_state.buffer_width, preview_state.buffer_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
+    /* Multipass system handles its own FBO/texture resources */
 
     preview_state.gl_initialized = true;
 
@@ -238,7 +219,6 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
     if (preview_state.last_render_time <= 0.001) {
         preview_state.last_render_time = current;
     }
-    double dt = current - preview_state.last_render_time;
     preview_state.last_render_time = current;
 
     double elapsed = current - preview_state.last_fps_time;
@@ -250,18 +230,8 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
         preview_state.last_fps_time = current;
     }
 
-    /* Default background if no shader */
-    if (!preview_state.gl_initialized || !preview_state.shader_valid ||
-        preview_state.shader_program == 0) {
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        return TRUE;
-    }
-
     int width = gtk_widget_get_allocated_width(GTK_WIDGET(area));
     int height = gtk_widget_get_allocated_height(GTK_WIDGET(area));
-
-    glViewport(0, 0, width, height);
 
     /* Calculate shader time */
     double current_time;
@@ -271,132 +241,32 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
         current_time = (get_time() - preview_state.start_time) * preview_state.time_speed;
     }
 
-    /* Common Uniform Setup Helper */
-    GLint loc;
-    #define SET_UNIFORMS(prog) \
-        do { \
-            loc = glGetUniformLocation(prog, "_neowall_time"); if (loc >= 0) glUniform1f(loc, (float)current_time); \
-            loc = glGetUniformLocation(prog, "_neowall_resolution"); if (loc >= 0) glUniform2f(loc, (float)width, (float)height); \
-            loc = glGetUniformLocation(prog, "_neowall_mouse"); if (loc >= 0) glUniform4f(loc, preview_state.mouse_x * width, preview_state.mouse_y * height, 0.0f, 0.0f); \
-            loc = glGetUniformLocation(prog, "_neowall_frame"); if (loc >= 0) glUniform1i(loc, (int)preview_state.total_frame_count); \
-            loc = glGetUniformLocation(prog, "iResolution"); if (loc >= 0) { float aspect = (width > 0 && height > 0) ? (float)width / (float)height : 1.0f; glUniform3f(loc, (float)width, (float)height, aspect); } \
-            loc = glGetUniformLocation(prog, "iTime"); if (loc >= 0) glUniform1f(loc, (float)current_time); \
-            loc = glGetUniformLocation(prog, "iTimeDelta"); if (loc >= 0) glUniform1f(loc, (float)dt); \
-            loc = glGetUniformLocation(prog, "iFrameRate"); if (loc >= 0) glUniform1f(loc, (float)preview_state.current_fps); \
-            loc = glGetUniformLocation(prog, "iFrame"); if (loc >= 0) glUniform1i(loc, (int)preview_state.total_frame_count); \
-            loc = glGetUniformLocation(prog, "iMouse"); if (loc >= 0) glUniform4f(loc, preview_state.mouse_x * width, preview_state.mouse_y * height, 0.0f, 0.0f); \
-            loc = glGetUniformLocation(prog, "_neowall_date"); \
-            if (loc >= 0) { \
-                float year=2024, month=1, day=1, seconds=0; \
-                /* Use time(NULL) for simplicity or platform specific */ \
-                time_t t = time(NULL); \
-                struct tm *tm_info = localtime(&t); \
-                if(tm_info) { \
-                    year = (float)(tm_info->tm_year + 1900); month = (float)(tm_info->tm_mon + 1); day = (float)tm_info->tm_mday; \
-                    seconds = (float)(tm_info->tm_hour * 3600 + tm_info->tm_min * 60 + tm_info->tm_sec); \
-                } \
-                glUniform4f(loc, year, month, day, seconds); \
-            } \
-        } while(0)
-
-    /* PASS 0: Buffer A (if available) */
-    if (preview_state.buffer_program) {
-        /* Resize buffer textures if needed */
-        if (preview_state.buffer_width != width || preview_state.buffer_height != height) {
-            preview_state.buffer_width = width;
-            preview_state.buffer_height = height;
-            for (int i = 0; i < 2; i++) {
-                glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[i]);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-            }
-        }
-
-        /* Bind FBO and set write target to next ping-pong texture */
-        int write_idx = (preview_state.ping_pong_index + 1) % 2;
-        int read_idx = preview_state.ping_pong_index;
-        
-        glBindFramebuffer(GL_FRAMEBUFFER, preview_state.buffer_fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, preview_state.buffer_tex[write_idx], 0);
-        glViewport(0, 0, width, height);
-        
-        glUseProgram(preview_state.buffer_program);
-        SET_UNIFORMS(preview_state.buffer_program);
-        
-        /* Bind Inputs for Buffer A */
-        /* iChannel0 = Default Noise (Common for procedural shaders) */
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-        /* iChannel1 = Previous Frame (Feedback) */
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[read_idx]);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-        
-        /* Set samplers */
-        for (int i = 0; i < 4; i++) {
-            char name[16];
-            snprintf(name, sizeof(name), "iChannel%d", i);
-            loc = glGetUniformLocation(preview_state.buffer_program, name);
-            if (loc >= 0) glUniform1i(loc, i);
+    /* ===== MULTIPASS RENDERING (handles both single and multi-pass shaders) ===== */
+    if (preview_state.multipass_shader) {
+        if (!preview_state.gl_initialized) {
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+            return TRUE;
         }
         
-        /* Draw Pass 0 */
-#if defined(HAVE_GLES3) || defined(USE_EPOXY)
-        glBindVertexArray(preview_state.vao);
-#endif
-        glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        /* Resize if needed */
+        multipass_resize(preview_state.multipass_shader, width, height);
         
-        /* Swap ping-pong index */
-        preview_state.ping_pong_index = write_idx;
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        /* Render all passes */
+        float mouse_px = preview_state.mouse_x * width;
+        float mouse_py = preview_state.mouse_y * height;
+        
+        multipass_render(preview_state.multipass_shader,
+                        (float)current_time,
+                        mouse_px, mouse_py,
+                        preview_state.mouse_click);
+        
+        return TRUE;
     }
 
-    /* PASS 1: Image (Screen) */
-    glViewport(0, 0, width, height);
-    glUseProgram(preview_state.shader_program);
-    SET_UNIFORMS(preview_state.shader_program);
-
-    /* Bind Inputs for Image Pass */
-    /* If multipass, iChannel0 = Buffer A Output. Else Noise. */
-    glActiveTexture(GL_TEXTURE0);
-    if (preview_state.buffer_program) {
-        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[preview_state.ping_pong_index]);
-    } else {
-        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-    }
-    
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
-
-    /* Set samplers */
-    for (int i = 0; i < 4; i++) {
-        char name[16];
-        snprintf(name, sizeof(name), "iChannel%d", i);
-        loc = glGetUniformLocation(preview_state.shader_program, name);
-        if (loc >= 0) glUniform1i(loc, i);
-    }
-
-    /* Draw Pass 1 */
-#if defined(HAVE_GLES3) || defined(USE_EPOXY)
-    glBindVertexArray(preview_state.vao);
-#endif
-    glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    glDisableVertexAttribArray(0);
-
+    /* No shader loaded - show default background */
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
     return TRUE;
 }
 
@@ -405,8 +275,7 @@ static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
     (void)user_data;
 
     /* Skip if already cleaned up */
-    if (!preview_state.gl_initialized && preview_state.shader_program == 0 && 
-        preview_state.vbo == 0 && preview_state.vao == 0) {
+    if (!preview_state.gl_initialized && preview_state.vbo == 0 && preview_state.vao == 0) {
         return;
     }
 
@@ -429,10 +298,10 @@ static void on_gl_unrealize(GtkGLArea *area, gpointer user_data) {
         preview_state.error_message = NULL;
     }
 
-    /* Cleanup shader program */
-    if (preview_state.shader_program != 0) {
-        glDeleteProgram(preview_state.shader_program);
-        preview_state.shader_program = 0;
+    /* Cleanup multipass shader */
+    if (preview_state.multipass_shader) {
+        multipass_destroy(preview_state.multipass_shader);
+        preview_state.multipass_shader = NULL;
     }
 
     if (preview_state.vbo != 0) {
@@ -557,54 +426,77 @@ bool editor_preview_compile_shader(const char *shader_code) {
         return false;
     }
 
-    /* Delete old shader programs */
-    if (preview_state.shader_program != 0) {
-        glDeleteProgram(preview_state.shader_program);
-        preview_state.shader_program = 0;
+    /* Store shader source for potential recompilation */
+    if (preview_state.current_shader_source) {
+        free(preview_state.current_shader_source);
     }
-    if (preview_state.buffer_program != 0) {
-        glDeleteProgram(preview_state.buffer_program);
-        preview_state.buffer_program = 0;
+    preview_state.current_shader_source = strdup(shader_code);
+
+    /* Clean up old multipass shader if exists */
+    if (preview_state.multipass_shader) {
+        multipass_destroy(preview_state.multipass_shader);
+        preview_state.multipass_shader = NULL;
     }
     preview_state.shader_valid = false;
 
-    /* Compile shader using shader library */
-    neowall_shader_options_t options = NEOWALL_SHADER_OPTIONS_DEFAULT;
-    options.use_es3 = true; /* Force ES3 for modern shaders */
+    /* All shaders go through multipass system (single-pass = Image-only multipass) */
+    int main_count = multipass_count_main_functions(shader_code);
+    log_info("Compiling shader with %d mainImage function(s)", main_count);
     
-    /* Try to compile Pass 0 (Buffer A or Single Pass) */
-    options.pass_index = 0;
-    neowall_shader_result_t res0 = neowall_shader_compile(shader_code, &options);
+    /* Create multipass shader */
+    preview_state.multipass_shader = multipass_create(shader_code);
     
-    /* Force Single Pass Mode: Only use Pass 0 (Buffer A / Main Scene) */
-    /* This avoids black screen issues with multipass composition */
-    
-    if (res0.success) {
-        preview_state.buffer_program = 0;
-        preview_state.shader_program = res0.program;
-        preview_state.shader_valid = true;
-        clear_error();
-    } else {
-        /* Failure */
-        GString *detailed_error = g_string_new("=== SHADER COMPILATION FAILED ===\n\n");
-
-        if (res0.error_message && strlen(res0.error_message) > 0) {
-            g_string_append(detailed_error, res0.error_message);
-        } else {
-            g_string_append(detailed_error, "Compilation failed with no error message provided.\n");
-        }
-
-        /* Add shader source context if available */
-        g_string_append(detailed_error, "\n\n=== SHADER SOURCE ===\n");
-        g_string_append(detailed_error, "(Check console for full shader source with line numbers)\n");
-
-        set_error(detailed_error->str);
-        g_string_free(detailed_error, TRUE);
-        neowall_shader_free_result(&res0);
+    if (!preview_state.multipass_shader) {
+        set_error("Failed to parse shader");
         return false;
     }
-
-    neowall_shader_free_result(&res0); // Safe, only frees strings
+    
+    int width = gtk_widget_get_allocated_width(preview_state.gl_area);
+    int height = gtk_widget_get_allocated_height(preview_state.gl_area);
+    
+    /* Ensure minimum size */
+    if (width < 16) width = 800;
+    if (height < 16) height = 600;
+    
+    /* Initialize GL resources */
+    if (!multipass_init_gl(preview_state.multipass_shader, width, height)) {
+        set_error("Failed to initialize GL resources");
+        multipass_destroy(preview_state.multipass_shader);
+        preview_state.multipass_shader = NULL;
+        return false;
+    }
+    
+    /* Compile all passes */
+    if (!multipass_compile_all(preview_state.multipass_shader)) {
+        /* Compilation failed - get errors */
+        char *errors = multipass_get_all_errors(preview_state.multipass_shader);
+        GString *detailed_error = g_string_new("=== SHADER COMPILATION FAILED ===\n\n");
+        
+        if (errors) {
+            g_string_append(detailed_error, errors);
+            free(errors);
+        } else {
+            g_string_append(detailed_error, "Unknown compilation error\n");
+        }
+        
+        set_error(detailed_error->str);
+        g_string_free(detailed_error, TRUE);
+        
+        multipass_destroy(preview_state.multipass_shader);
+        preview_state.multipass_shader = NULL;
+        return false;
+    }
+    
+    /* Success */
+    preview_state.shader_valid = true;
+    clear_error();
+    
+    log_info("Successfully compiled shader with %d pass(es)",
+             preview_state.multipass_shader->pass_count);
+    
+    /* Debug dump */
+    multipass_debug_dump(preview_state.multipass_shader);
+    
     return true;
 }
 
@@ -613,7 +505,9 @@ const char *editor_preview_get_error(void) {
 }
 
 bool editor_preview_has_shader(void) {
-    return preview_state.shader_valid && preview_state.shader_program != 0;
+    return preview_state.shader_valid && 
+           preview_state.multipass_shader && 
+           multipass_is_ready(preview_state.multipass_shader);
 }
 
 void editor_preview_set_paused(bool paused) {
@@ -649,8 +543,12 @@ float editor_preview_get_speed(void) {
 
 void editor_preview_reset_time(void) {
     preview_state.start_time = get_time();
-    preview_state.pause_time = 0.0;
-    preview_state.frame_count = 0;
+    preview_state.total_frame_count = 0;
+    
+    /* Reset multipass shader buffers */
+    if (preview_state.multipass_shader) {
+        multipass_reset(preview_state.multipass_shader);
+    }
 }
 
 double editor_preview_get_fps(void) {
@@ -692,10 +590,10 @@ void editor_preview_destroy(void) {
         gtk_gl_area_make_current(GTK_GL_AREA(preview_state.gl_area));
         
         if (gtk_gl_area_get_error(GTK_GL_AREA(preview_state.gl_area)) == NULL) {
-            /* Cleanup shader program */
-            if (preview_state.shader_program) {
-                glDeleteProgram(preview_state.shader_program);
-                preview_state.shader_program = 0;
+            /* Cleanup multipass shader */
+            if (preview_state.multipass_shader) {
+                multipass_destroy(preview_state.multipass_shader);
+                preview_state.multipass_shader = NULL;
             }
 
             if (preview_state.vbo != 0) {
@@ -709,6 +607,11 @@ void editor_preview_destroy(void) {
                 preview_state.vao = 0;
             }
 #endif
+            
+            if (preview_state.default_texture != 0) {
+                glDeleteTextures(1, &preview_state.default_texture);
+                preview_state.default_texture = 0;
+            }
         }
     }
 
@@ -716,6 +619,12 @@ void editor_preview_destroy(void) {
     if (preview_state.error_message) {
         g_free(preview_state.error_message);
         preview_state.error_message = NULL;
+    }
+    
+    /* Cleanup shader source */
+    if (preview_state.current_shader_source) {
+        free(preview_state.current_shader_source);
+        preview_state.current_shader_source = NULL;
     }
 
     /* Reset state */

@@ -161,12 +161,8 @@ LDFLAGS += -lm
 # Source Files
 # ============================================
 
-# Shader library sources
-SHADER_LIB_SOURCES := $(SHADER_LIB_DIR)/shader_core.c \
-                      $(SHADER_LIB_DIR)/shadertoy_compat.c \
-                      $(SHADER_LIB_DIR)/shader_adaptation.c \
-                      $(SHADER_LIB_DIR)/neowall_shader_api.c \
-                      $(SHADER_LIB_DIR)/shader_utils.c
+# Shader library sources (multipass system only - no legacy code)
+SHADER_LIB_SOURCES := $(SHADER_LIB_DIR)/shader_multipass.c
 
 # Editor component sources
 EDITOR_DIR := $(SRC_DIR)/editor
