@@ -118,11 +118,19 @@ typedef struct {
     bool adaptive_resolution;                /* Enable automatic resolution adjustment */
     float target_fps;                        /* Target FPS (default 60) */
     float current_fps;                       /* Current measured FPS */
-    float fps_history[8];                    /* Rolling FPS history for smoothing */
+    float fps_history[16];                   /* Rolling FPS history for smoothing */
+    float frame_times[16];                   /* Frame time history for analysis */
     int fps_history_index;                   /* Current index in history */
     double last_fps_update_time;             /* Time of last FPS measurement */
     int frames_since_fps_update;             /* Frame counter for FPS calculation */
     double last_scale_adjust_time;           /* Time of last scale adjustment */
+    
+    /* Stability tracking */
+    int stable_frames;                       /* Consecutive frames near target FPS */
+    int last_adjustment_direction;           /* -1 = down, 0 = none, 1 = up */
+    int oscillation_count;                   /* Count of direction changes */
+    float locked_scale;                      /* Scale value when locked */
+    bool scale_locked;                       /* True when scale is locked (stable) */
     
     /* Initial calibration */
     bool initial_calibration_done;           /* True after initial FPS measurement */
