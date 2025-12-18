@@ -85,15 +85,19 @@ static const char *shadertoy_wrapper_prefix_desktop =
     "uniform vec4 _neowall_date;           // Maps to iDate\n"
     "uniform vec3 iResolution;    // Shadertoy iResolution (set in render)\n"
     "\n"
-    "// Shadertoy uniform arrays - use vec2 for channel resolution (common expectation)\n"
+    "// Shadertoy uniform arrays (must come after precision specifier)\n"
     "uniform vec4 iChannelTime[4];\n"
     "uniform vec2 iChannelResolution[4];\n"
+    "\n"
+    "// Additional Shadertoy Inputs\n"
+    "uniform sampler2D iKeyboard; // Texture for keyboard input\n"
     "\n"
     "// Shadertoy-compatible global variables (initialized at declaration)\n"
     "float iTime = 0.0;\n"
     "float time = 0.0;\n"
     "vec2 resolution = vec2(0.0);\n"
     "float iTimeDelta = 0.016667;\n"
+    "float iFrameRate = 60.0;\n"
     "int iFrame = 0;\n"
     "vec4 iMouse = vec4(0.0);\n"
     "vec4 iDate = vec4(2024.0, 1.0, 1.0, 0.0);\n"
@@ -176,11 +180,15 @@ static const char *shadertoy_wrapper_prefix_es2 =
     "uniform vec4 iChannelTime[4];\n"
     "uniform vec2 iChannelResolution[4];\n"
     "\n"
+    "// Additional Shadertoy inputs\n"
+    "uniform sampler2D iKeyboard; // Texture for keyboard input\n"
+    "\n"
     "// Shadertoy-compatible global variables (initialized at declaration)\n"
     "float iTime = 0.0;\n"
     "float time = 0.0;\n"
     "vec2 resolution = vec2(0.0);\n"
     "float iTimeDelta = 0.016667;\n"
+    "float iFrameRate = 60.0;\n"
     "int iFrame = 0;\n"
     "vec4 iMouse = vec4(0.0);\n"
     "vec4 iDate = vec4(2024.0, 1.0, 1.0, 0.0);\n"
@@ -228,11 +236,15 @@ static const char *shadertoy_wrapper_prefix_es3 =
     "uniform vec4 iChannelTime[4];\n"
     "uniform vec2 iChannelResolution[4];\n"
     "\n"
+    "// Additional Shadertoy inputs\n"
+    "uniform sampler2D iKeyboard; // Texture for keyboard input\n"
+    "\n"
     "// Shadertoy-compatible global variables (initialized at declaration)\n"
     "float iTime = 0.0;\n"
     "float time = 0.0;\n"
     "vec2 resolution = vec2(0.0);\n"
     "float iTimeDelta = 0.016667;\n"
+    "float iFrameRate = 60.0;\n"
     "int iFrame = 0;\n"
     "vec4 iMouse = vec4(0.0);\n"
     "vec4 iDate = vec4(2024.0, 1.0, 1.0, 0.0);\n"
@@ -253,7 +265,7 @@ static const char *shadertoy_wrapper_prefix_es3 =
 #endif /* !USE_EPOXY */
 
 /* Build dynamic iChannel declarations based on channel count */
-static char *build_ichannel_declarations(size_t channel_count) {
+static char *build_ichannel_declarations(const char *source, size_t channel_count) {
     if (channel_count == 0) {
         channel_count = 5; // Default to 5 channels
     }
@@ -268,7 +280,49 @@ static char *build_ichannel_declarations(size_t channel_count) {
 
     for (size_t i = 0; i < channel_count; i++) {
         char line[64];
-        snprintf(line, sizeof(line), "uniform sampler2D iChannel%zu;\n", i);
+        char channel_name[32];
+        snprintf(channel_name, sizeof(channel_name), "iChannel%zu", i);
+        
+        bool is_cubemap = false;
+        if (source) {
+            /* Check if channel is used as a cubemap sampler */
+            /* Look for: samplerCube iChannelX */
+            char explicit_pattern[64];
+            snprintf(explicit_pattern, sizeof(explicit_pattern), "samplerCube %s", channel_name);
+            if (strstr(source, explicit_pattern)) {
+                is_cubemap = true;
+            } else {
+                /* Look for: texture(iChannelX, vec3) usage */
+                /* This is a heuristic. If we see texture(iChannelX, ... vec3) it might be a cubemap */
+                /* However, wrap_shadertoy_shader also has logic to convert vec3 coords to vec2 for 2D textures */
+                /* Ideally, we should check if the user *intends* a cubemap. */
+                /* Common pattern: texture(iChannelX, ray_dir) where ray_dir is vec3 */
+                
+                char usage_pattern[64];
+                snprintf(usage_pattern, sizeof(usage_pattern), "texture(%s,", channel_name);
+                const char *pos = strstr(source, usage_pattern);
+                while (pos) {
+                    /* Check arguments to see if it looks like a cubemap lookup */
+                    /* (This is tricky to do reliably without a full parser, so for now we default to sampler2D */
+                    /* unless explicitly declared or heavily implied) */
+                    
+                    /* If the user explicitly asks for textureCube, we know it's a cubemap */
+                    char cube_usage[64];
+                    snprintf(cube_usage, sizeof(cube_usage), "textureCube(%s", channel_name);
+                    if (strstr(source, cube_usage)) {
+                        is_cubemap = true;
+                        break;
+                    }
+                    pos = strstr(pos + 1, usage_pattern);
+                }
+            }
+        }
+
+        if (is_cubemap) {
+            snprintf(line, sizeof(line), "uniform samplerCube iChannel%zu;\n", i);
+        } else {
+            snprintf(line, sizeof(line), "uniform sampler2D iChannel%zu;\n", i);
+        }
         strcat(declarations, line);
     }
 
@@ -1489,8 +1543,7 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
                 needs_cleanup = true;
                 log_debug("✓ Successfully removed conflicting uniforms");
             } else {
-                log_error("✗ Failed to clean conflicting uniforms");
-                return NULL;
+                log_info("WARNING: ✗ Failed to clean conflicting uniforms - proceeding with risk of collision");
             }
         }
 
@@ -1516,11 +1569,7 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
                     conflicts |= (1 << 4);  /* Set assignment conflict flag */
                 }
             } else {
-                log_error("✗ Failed to clean conflicting global variables");
-                if (needs_cleanup) {
-                    free(cleaned_source);
-                }
-                return NULL;
+                log_info("WARNING: ✗ Failed to clean conflicting global variables - proceeding with risk of collision");
             }
         }
 
@@ -1552,8 +1601,65 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         log_debug("╚══════════════════════════════════════════════════════════════╝");
     }
 
+    /* Handle multiple mainImage definitions (Multipass shader paste) */
+    int main_count = 0;
+    const char *ptr = source_body;
+    while (*ptr) {
+        if (strncmp(ptr, "void", 4) == 0) {
+            const char *check = ptr + 4;
+            while (*check && isspace(*check)) check++;
+            if (strncmp(check, "mainImage", 9) == 0) {
+                main_count++;
+            }
+        }
+        ptr++;
+    }
+
+    if (main_count > 1) {
+        log_info("Detected %d mainImage definitions - attempting to handle multipass paste", main_count);
+        
+        /* We need to rename all but the last mainImage */
+        char *multi_fix = NULL;
+        const char *src_ref = (needs_cleanup && cleaned_source) ? cleaned_source : source_body;
+        size_t len = strlen(src_ref);
+        
+        multi_fix = malloc(len + 1);
+        if (multi_fix) {
+            strcpy(multi_fix, src_ref);
+            
+            /* Replace "void ... mainImage" with "void ... mainImagX" for all but last */
+            int found = 0;
+            char *search_ptr = multi_fix;
+            while (*search_ptr) {
+                if (strncmp(search_ptr, "void", 4) == 0) {
+                    char *check = search_ptr + 4;
+                    while (*check && isspace(*check)) check++;
+                    if (strncmp(check, "mainImage", 9) == 0) {
+                        found++;
+                        if (found < main_count) {
+                            /* Rename this one to disable it */
+                            /* change 'e' to 'X' -> "mainImagX" */
+                            check[8] = 'X'; 
+                        }
+                    }
+                }
+                search_ptr++;
+            }
+            
+            /* Update source_body pointers */
+            if (needs_cleanup && cleaned_source) {
+                free(cleaned_source);
+            }
+            cleaned_source = multi_fix;
+            source_body = cleaned_source;
+            needs_cleanup = true;
+            
+            log_info("Renamed %d extra mainImage functions to mainImagX", main_count - 1);
+        }
+    }
+
     /* Build dynamic iChannel declarations */
-    char *channel_decls = build_ichannel_declarations(channel_count);
+    char *channel_decls = build_ichannel_declarations(source_body, channel_count);
     if (!channel_decls) {
         log_error("Failed to build iChannel declarations");
         return NULL;
@@ -1584,7 +1690,32 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         }
 #endif
     } else {
-        log_error("Could not detect GL version (glGetString returned NULL), defaulting to ES 2.0 wrapper");
+        log_info("WARNING: Could not detect GL version (glGetString returned NULL), defaulting to ES 3.0 wrapper for compatibility");
+        use_es3 = true;
+    }
+
+    /* Check source for ES 3.0 / modern features to force upgrade */
+    if (!use_es3) {
+         if (strstr(source_body, "inverse") || 
+             strstr(source_body, "transpose") ||
+             strstr(source_body, "determinant") ||
+             strstr(source_body, ">>") ||
+             strstr(source_body, "<<") ||
+             strstr(source_body, "&") ||
+             strstr(source_body, "|") ||
+             strstr(source_body, "round") ||
+             strstr(source_body, "trunc") ||
+             strstr(source_body, "textureLod") || 
+             strstr(source_body, "floatBitsToInt") ||
+             strstr(source_body, "intBitsToFloat") ||
+             strstr(source_body, "switch") ||
+             strstr(source_body, "case") ||
+             strstr(source_body, "default") ||
+             strstr(source_body, "#version 3")) {
+             
+             log_info("Detected ES 3.0 / Modern GLSL features in source, forcing modern wrapper");
+             use_es3 = true;
+         }
     }
 
     /* Select appropriate wrapper strings */
@@ -1777,14 +1908,13 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         /* Use shadertoy_compat to intelligently convert GLSL 3.0 texture calls
          * to GLSL ES 1.0 texture2D calls for iChannel samplers */
         char *converted = shadertoy_convert_texture_calls(wrapped);
-        free(wrapped);
-
-        if (!converted) {
-            log_error("Failed to convert texture calls in Shadertoy shader");
-            return NULL;
+        
+        if (converted) {
+            free(wrapped);
+            wrapped = converted;
+        } else {
+            log_info("WARNING: Failed to convert texture calls in Shadertoy shader - using unconverted source");
         }
-
-        wrapped = converted;
     }
 
     log_info("Wrapped Shadertoy format shader with compatibility layer (%zu channels)",

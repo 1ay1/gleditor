@@ -652,9 +652,9 @@ char *shadertoy_convert_texture_calls(const char *source) {
             const char *check = src + 11;
             while (*check && isspace(*check)) check++;
 
-            /* Only convert if it's an iChannel sampler */
-            if (strncmp(check, "iChannel", 8) == 0) {
-                log_debug("Converting textureLod(iChannel...) to texture2D(iChannel...)");
+            /* Only convert if it's an iChannel or iKeyboard sampler */
+            if (strncmp(check, "iChannel", 8) == 0 || strncmp(check, "iKeyboard", 9) == 0) {
+                log_debug("Converting textureLod(iChannel/iKeyboard...) to texture2D(iChannel/iKeyboard...)");
 
                 /* Write replacement: texture2D( */
                 strcpy(dst, "texture2D(");
@@ -709,9 +709,9 @@ char *shadertoy_convert_texture_calls(const char *source) {
                 const char *check = src + 8;
                 while (*check && isspace(*check)) check++;
 
-                /* Only convert if it's an iChannel sampler */
-                if (strncmp(check, "iChannel", 8) == 0) {
-                    log_debug("Converting texture(iChannel...) to texture2D(iChannel...)");
+                /* Only convert if it's an iChannel or iKeyboard sampler */
+                if (strncmp(check, "iChannel", 8) == 0 || strncmp(check, "iKeyboard", 9) == 0) {
+                    log_debug("Converting texture(iChannel/iKeyboard...) to texture2D(iChannel/iKeyboard...)");
 
                     /* Write replacement: texture2D( */
                     strcpy(dst, "texture2D(");

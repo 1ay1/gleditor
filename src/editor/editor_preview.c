@@ -35,6 +35,8 @@ static struct {
     double current_fps;
     double last_fps_time;
     int frame_count;
+    long long total_frame_count;
+    double last_render_time;
     guint tick_callback_id;
     editor_preview_error_callback_t error_callback;
     gpointer error_callback_data;
@@ -58,6 +60,8 @@ static struct {
     .current_fps = 0.0,
     .last_fps_time = 0.0,
     .frame_count = 0,
+    .total_frame_count = 0,
+    .last_render_time = 0.0,
     .tick_callback_id = 0,
     .error_callback = NULL,
     .error_callback_data = NULL,
@@ -179,7 +183,15 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
 
     /* Update FPS counter (do this first, even if no shader) */
     preview_state.frame_count++;
+    preview_state.total_frame_count++;
     double current = get_time();
+
+    if (preview_state.last_render_time <= 0.001) {
+        preview_state.last_render_time = current;
+    }
+    double dt = current - preview_state.last_render_time;
+    preview_state.last_render_time = current;
+
     double elapsed = current - preview_state.last_fps_time;
 
     /* Update FPS more frequently (every 0.1 seconds) for smoother display */
@@ -236,7 +248,7 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
 
     loc = glGetUniformLocation(preview_state.shader_program, "_neowall_frame");
     if (loc >= 0) {
-        glUniform1i(loc, preview_state.frame_count);
+        glUniform1i(loc, (int)preview_state.total_frame_count);
     }
 
     /* Set _neowall_date uniform (year, month, day, seconds since midnight with sub-second precision) */
@@ -275,12 +287,17 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
 
     loc = glGetUniformLocation(preview_state.shader_program, "iTimeDelta");
     if (loc >= 0) {
-        glUniform1f(loc, 1.0f / 60.0f);
+        glUniform1f(loc, (float)dt);
+    }
+
+    loc = glGetUniformLocation(preview_state.shader_program, "iFrameRate");
+    if (loc >= 0) {
+        glUniform1f(loc, (float)preview_state.current_fps);
     }
 
     loc = glGetUniformLocation(preview_state.shader_program, "iFrame");
     if (loc >= 0) {
-        glUniform1i(loc, preview_state.frame_count);
+        glUniform1i(loc, (int)preview_state.total_frame_count);
     }
 
     loc = glGetUniformLocation(preview_state.shader_program, "iMouse");
@@ -424,7 +441,9 @@ GtkWidget *editor_preview_create(void) {
 
     /* Initialize FPS timing */
     preview_state.start_time = get_time();
-    preview_state.last_fps_time = preview_state.start_time;
+    preview_state.pause_time = preview_state.start_time;
+    preview_state.total_frame_count = 0;
+    preview_state.last_render_time = 0.0;
     preview_state.frame_count = 0;
 
     /* Tick callback will be added when widget is realized */

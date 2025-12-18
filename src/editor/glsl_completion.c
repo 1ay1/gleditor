@@ -226,9 +226,40 @@ static void provider_populate(GtkSourceCompletionProvider *provider,
 
 static gboolean provider_match(GtkSourceCompletionProvider *provider,
                                GtkSourceCompletionContext *context) {
+    GtkSourceCompletionActivation activation;
+    GtkTextIter iter;
+    GtkTextIter start;
+    gchar *text;
+    gboolean result = FALSE;
+
     (void)provider;
-    (void)context;
-    return TRUE; /* Always active */
+
+    activation = gtk_source_completion_context_get_activation(context);
+    if (activation & GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED) {
+        return TRUE;
+    }
+
+    if (!gtk_source_completion_context_get_iter(context, &iter)) {
+        return FALSE;
+    }
+
+    start = iter;
+    /* Find start of word to check length */
+    while (gtk_text_iter_backward_char(&start)) {
+        gunichar c = gtk_text_iter_get_char(&start);
+        if (!g_unichar_isalnum(c) && c != '_') {
+            gtk_text_iter_forward_char(&start);
+            break;
+        }
+    }
+
+    text = gtk_text_iter_get_text(&start, &iter);
+    if (text && strlen(text) >= 2) {
+        result = TRUE;
+    }
+    g_free(text);
+
+    return result;
 }
 
 static GtkSourceCompletionActivation provider_get_activation(GtkSourceCompletionProvider *provider) {
