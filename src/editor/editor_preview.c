@@ -21,9 +21,16 @@
 /* Module state */
 static struct {
     GtkWidget *gl_area;
-    GLuint shader_program;
+    GLuint shader_program;      /* Pass 1: Image */
+    GLuint buffer_program;      /* Pass 0: Buffer A */
+    GLuint buffer_fbo;          /* FBO for Buffer A */
+    GLuint buffer_tex[2];       /* Ping-pong textures for Buffer A */
+    int buffer_width;
+    int buffer_height;
+    int ping_pong_index;
     GLuint vao;
     GLuint vbo;
+    GLuint default_texture;
     bool gl_initialized;
     bool shader_valid;
     double start_time;
@@ -47,8 +54,15 @@ static struct {
 } preview_state = {
     .gl_area = NULL,
     .shader_program = 0,
+    .buffer_program = 0,
+    .buffer_fbo = 0,
+    .buffer_tex = {0, 0},
+    .buffer_width = 0,
+    .buffer_height = 0,
+    .ping_pong_index = 0,
     .vao = 0,
     .vbo = 0,
+    .default_texture = 0,
     .gl_initialized = false,
     .shader_valid = false,
     .start_time = 0.0,
@@ -147,6 +161,41 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
     glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
+    /* Generate default white noise texture */
+    glGenTextures(1, &preview_state.default_texture);
+    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+    
+    unsigned char *noise_data = malloc(256 * 256 * 4);
+    if (noise_data) {
+        for (int i = 0; i < 256 * 256 * 4; i++) {
+            noise_data[i] = rand() % 255;
+        }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, noise_data);
+        free(noise_data);
+    }
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    /* Setup Multipass FBO */
+    glGenFramebuffers(1, &preview_state.buffer_fbo);
+    glGenTextures(2, preview_state.buffer_tex);
+    
+    /* Initialize ping-pong textures */
+    preview_state.buffer_width = 800; /* Default size */
+    preview_state.buffer_height = 450;
+    
+    for (int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, preview_state.buffer_width, preview_state.buffer_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
     preview_state.gl_initialized = true;
 
     /* Initialize timing if not already done */
@@ -222,97 +271,124 @@ static gboolean on_gl_render(GtkGLArea *area, GdkGLContext *context, gpointer us
         current_time = (get_time() - preview_state.start_time) * preview_state.time_speed;
     }
 
-    /* Use shader program */
-    glUseProgram(preview_state.shader_program);
-
-    /* Set NeoWall internal uniforms */
+    /* Common Uniform Setup Helper */
     GLint loc;
+    #define SET_UNIFORMS(prog) \
+        do { \
+            loc = glGetUniformLocation(prog, "_neowall_time"); if (loc >= 0) glUniform1f(loc, (float)current_time); \
+            loc = glGetUniformLocation(prog, "_neowall_resolution"); if (loc >= 0) glUniform2f(loc, (float)width, (float)height); \
+            loc = glGetUniformLocation(prog, "_neowall_mouse"); if (loc >= 0) glUniform4f(loc, preview_state.mouse_x * width, preview_state.mouse_y * height, 0.0f, 0.0f); \
+            loc = glGetUniformLocation(prog, "_neowall_frame"); if (loc >= 0) glUniform1i(loc, (int)preview_state.total_frame_count); \
+            loc = glGetUniformLocation(prog, "iResolution"); if (loc >= 0) { float aspect = (width > 0 && height > 0) ? (float)width / (float)height : 1.0f; glUniform3f(loc, (float)width, (float)height, aspect); } \
+            loc = glGetUniformLocation(prog, "iTime"); if (loc >= 0) glUniform1f(loc, (float)current_time); \
+            loc = glGetUniformLocation(prog, "iTimeDelta"); if (loc >= 0) glUniform1f(loc, (float)dt); \
+            loc = glGetUniformLocation(prog, "iFrameRate"); if (loc >= 0) glUniform1f(loc, (float)preview_state.current_fps); \
+            loc = glGetUniformLocation(prog, "iFrame"); if (loc >= 0) glUniform1i(loc, (int)preview_state.total_frame_count); \
+            loc = glGetUniformLocation(prog, "iMouse"); if (loc >= 0) glUniform4f(loc, preview_state.mouse_x * width, preview_state.mouse_y * height, 0.0f, 0.0f); \
+            loc = glGetUniformLocation(prog, "_neowall_date"); \
+            if (loc >= 0) { \
+                float year=2024, month=1, day=1, seconds=0; \
+                /* Use time(NULL) for simplicity or platform specific */ \
+                time_t t = time(NULL); \
+                struct tm *tm_info = localtime(&t); \
+                if(tm_info) { \
+                    year = (float)(tm_info->tm_year + 1900); month = (float)(tm_info->tm_mon + 1); day = (float)tm_info->tm_mday; \
+                    seconds = (float)(tm_info->tm_hour * 3600 + tm_info->tm_min * 60 + tm_info->tm_sec); \
+                } \
+                glUniform4f(loc, year, month, day, seconds); \
+            } \
+        } while(0)
 
-    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_time");
-    if (loc >= 0) {
-        glUniform1f(loc, (float)current_time);
-    }
+    /* PASS 0: Buffer A (if available) */
+    if (preview_state.buffer_program) {
+        /* Resize buffer textures if needed */
+        if (preview_state.buffer_width != width || preview_state.buffer_height != height) {
+            preview_state.buffer_width = width;
+            preview_state.buffer_height = height;
+            for (int i = 0; i < 2; i++) {
+                glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[i]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            }
+        }
 
-    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_resolution");
-    if (loc >= 0) {
-        glUniform2f(loc, (float)width, (float)height);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_mouse");
-    if (loc >= 0) {
-        glUniform4f(loc,
-                    preview_state.mouse_x * width,
-                    preview_state.mouse_y * height,
-                    0.0f, 0.0f);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_frame");
-    if (loc >= 0) {
-        glUniform1i(loc, (int)preview_state.total_frame_count);
-    }
-
-    /* Set _neowall_date uniform (year, month, day, seconds since midnight with sub-second precision) */
-    loc = glGetUniformLocation(preview_state.shader_program, "_neowall_date");
-    if (loc >= 0) {
-#ifdef _WIN32
-        SYSTEMTIME st;
-        GetLocalTime(&st);
-        float year = (float)st.wYear;
-        float month = (float)st.wMonth;
-        float day = (float)st.wDay;
-        float seconds = (float)(st.wHour * 3600 + st.wMinute * 60 + st.wSecond) + (float)st.wMilliseconds / 1000.0f;
-#else
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm *tm_info = localtime(&tv.tv_sec);
-        float year = (float)(tm_info->tm_year + 1900);
-        float month = (float)(tm_info->tm_mon + 1);
-        float day = (float)tm_info->tm_mday;
-        float seconds = (float)(tm_info->tm_hour * 3600 + tm_info->tm_min * 60 + tm_info->tm_sec) + (float)tv.tv_usec / 1000000.0f;
+        /* Bind FBO and set write target to next ping-pong texture */
+        int write_idx = (preview_state.ping_pong_index + 1) % 2;
+        int read_idx = preview_state.ping_pong_index;
+        
+        glBindFramebuffer(GL_FRAMEBUFFER, preview_state.buffer_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, preview_state.buffer_tex[write_idx], 0);
+        glViewport(0, 0, width, height);
+        
+        glUseProgram(preview_state.buffer_program);
+        SET_UNIFORMS(preview_state.buffer_program);
+        
+        /* Bind Inputs for Buffer A */
+        /* iChannel0 = Default Noise (Common for procedural shaders) */
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+        /* iChannel1 = Previous Frame (Feedback) */
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[read_idx]);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+        
+        /* Set samplers */
+        for (int i = 0; i < 4; i++) {
+            char name[16];
+            snprintf(name, sizeof(name), "iChannel%d", i);
+            loc = glGetUniformLocation(preview_state.buffer_program, name);
+            if (loc >= 0) glUniform1i(loc, i);
+        }
+        
+        /* Draw Pass 0 */
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
+        glBindVertexArray(preview_state.vao);
 #endif
-        glUniform4f(loc, year, month, day, seconds);
+        glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        
+        /* Swap ping-pong index */
+        preview_state.ping_pong_index = write_idx;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    /* Set Shadertoy uniforms for compatibility */
-    loc = glGetUniformLocation(preview_state.shader_program, "iResolution");
-    if (loc >= 0) {
-        float aspect = (width > 0 && height > 0) ? (float)width / (float)height : 1.0f;
-        glUniform3f(loc, (float)width, (float)height, aspect);
+    /* PASS 1: Image (Screen) */
+    glViewport(0, 0, width, height);
+    glUseProgram(preview_state.shader_program);
+    SET_UNIFORMS(preview_state.shader_program);
+
+    /* Bind Inputs for Image Pass */
+    /* If multipass, iChannel0 = Buffer A Output. Else Noise. */
+    glActiveTexture(GL_TEXTURE0);
+    if (preview_state.buffer_program) {
+        glBindTexture(GL_TEXTURE_2D, preview_state.buffer_tex[preview_state.ping_pong_index]);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+    }
+    
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, preview_state.default_texture);
+
+    /* Set samplers */
+    for (int i = 0; i < 4; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "iChannel%d", i);
+        loc = glGetUniformLocation(preview_state.shader_program, name);
+        if (loc >= 0) glUniform1i(loc, i);
     }
 
-    loc = glGetUniformLocation(preview_state.shader_program, "iTime");
-    if (loc >= 0) {
-        glUniform1f(loc, (float)current_time);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "iTimeDelta");
-    if (loc >= 0) {
-        glUniform1f(loc, (float)dt);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "iFrameRate");
-    if (loc >= 0) {
-        glUniform1f(loc, (float)preview_state.current_fps);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "iFrame");
-    if (loc >= 0) {
-        glUniform1i(loc, (int)preview_state.total_frame_count);
-    }
-
-    loc = glGetUniformLocation(preview_state.shader_program, "iMouse");
-    if (loc >= 0) {
-        glUniform4f(loc,
-                    preview_state.mouse_x * width,
-                    preview_state.mouse_y * height,
-                    0.0f, 0.0f);
-    }
-
-    /* Draw fullscreen quad */
+    /* Draw Pass 1 */
 #if defined(HAVE_GLES3) || defined(USE_EPOXY)
     glBindVertexArray(preview_state.vao);
 #endif
-
     glBindBuffer(GL_ARRAY_BUFFER, preview_state.vbo);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
@@ -481,22 +557,39 @@ bool editor_preview_compile_shader(const char *shader_code) {
         return false;
     }
 
-    /* Delete old shader program */
+    /* Delete old shader programs */
     if (preview_state.shader_program != 0) {
         glDeleteProgram(preview_state.shader_program);
         preview_state.shader_program = 0;
-        preview_state.shader_valid = false;
     }
+    if (preview_state.buffer_program != 0) {
+        glDeleteProgram(preview_state.buffer_program);
+        preview_state.buffer_program = 0;
+    }
+    preview_state.shader_valid = false;
 
     /* Compile shader using shader library */
-    neowall_shader_result_t result = neowall_shader_compile(shader_code, NULL);
-
-    if (!result.success) {
-        /* Build detailed error message with all available information */
+    neowall_shader_options_t options = NEOWALL_SHADER_OPTIONS_DEFAULT;
+    options.use_es3 = true; /* Force ES3 for modern shaders */
+    
+    /* Try to compile Pass 0 (Buffer A or Single Pass) */
+    options.pass_index = 0;
+    neowall_shader_result_t res0 = neowall_shader_compile(shader_code, &options);
+    
+    /* Force Single Pass Mode: Only use Pass 0 (Buffer A / Main Scene) */
+    /* This avoids black screen issues with multipass composition */
+    
+    if (res0.success) {
+        preview_state.buffer_program = 0;
+        preview_state.shader_program = res0.program;
+        preview_state.shader_valid = true;
+        clear_error();
+    } else {
+        /* Failure */
         GString *detailed_error = g_string_new("=== SHADER COMPILATION FAILED ===\n\n");
 
-        if (result.error_message && strlen(result.error_message) > 0) {
-            g_string_append(detailed_error, result.error_message);
+        if (res0.error_message && strlen(res0.error_message) > 0) {
+            g_string_append(detailed_error, res0.error_message);
         } else {
             g_string_append(detailed_error, "Compilation failed with no error message provided.\n");
         }
@@ -507,15 +600,11 @@ bool editor_preview_compile_shader(const char *shader_code) {
 
         set_error(detailed_error->str);
         g_string_free(detailed_error, TRUE);
-        neowall_shader_free_result(&result);
+        neowall_shader_free_result(&res0);
         return false;
     }
 
-    /* Store new program */
-    preview_state.shader_program = result.program;
-    preview_state.shader_valid = true;
-
-    clear_error();
+    neowall_shader_free_result(&res0); // Safe, only frees strings
     return true;
 }
 

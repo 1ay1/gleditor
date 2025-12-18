@@ -132,8 +132,22 @@ static const char *shadertoy_wrapper_suffix_desktop =
     "    iFrame = _neowall_frame;\n"
     "    iDate = _neowall_date;\n"
     "    \n"
-    "    vec4 color;\n"
-    "    mainImage(color, gl_FragCoord.xy);\n"
+    "    vec4 color = vec4(0.0);\n"
+    "    #ifdef PASS_INDEX\n"
+    "        #if PASS_INDEX == 0\n"
+    "            mainImag0(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 1\n"
+    "            mainImag1(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 2\n"
+    "            mainImag2(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 3\n"
+    "            mainImag3(color, gl_FragCoord.xy);\n"
+    "        #else\n"
+    "            mainImage(color, gl_FragCoord.xy);\n"
+    "        #endif\n"
+    "    #else\n"
+    "        mainImage(color, gl_FragCoord.xy);\n"
+    "    #endif\n"
     "    fragColor = color;\n"
     "}\n";
 #endif
@@ -345,7 +359,23 @@ static const char *shadertoy_wrapper_suffix_es2 =
     "    iFrame = _neowall_frame;\n"
     "    iDate = _neowall_date;\n"
     "    \n"
-    "    mainImage(gl_FragColor, gl_FragCoord.xy);\n"
+    "    vec4 color = vec4(0.0);\n"
+    "    #ifdef PASS_INDEX\n"
+    "        #if PASS_INDEX == 0\n"
+    "            mainImag0(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 1\n"
+    "            mainImag1(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 2\n"
+    "            mainImag2(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 3\n"
+    "            mainImag3(color, gl_FragCoord.xy);\n"
+    "        #else\n"
+    "            mainImage(color, gl_FragCoord.xy);\n"
+    "        #endif\n"
+    "    #else\n"
+    "        mainImage(color, gl_FragCoord.xy);\n"
+    "    #endif\n"
+    "    gl_FragColor = color;\n"
     "}\n";
 
 /* Shadertoy compatibility wrapper suffix - ES 3.0 version */
@@ -361,8 +391,22 @@ static const char *shadertoy_wrapper_suffix_es3 =
     "    iFrame = _neowall_frame;\n"
     "    iDate = _neowall_date;\n"
     "    \n"
-    "    vec4 color;\n"
-    "    mainImage(color, gl_FragCoord.xy);\n"
+    "    vec4 color = vec4(0.0);\n"
+    "    #ifdef PASS_INDEX\n"
+    "        #if PASS_INDEX == 0\n"
+    "            mainImag0(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 1\n"
+    "            mainImag1(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 2\n"
+    "            mainImag2(color, gl_FragCoord.xy);\n"
+    "        #elif PASS_INDEX == 3\n"
+    "            mainImag3(color, gl_FragCoord.xy);\n"
+    "        #else\n"
+    "            mainImage(color, gl_FragCoord.xy);\n"
+    "        #endif\n"
+    "    #else\n"
+    "        mainImage(color, gl_FragCoord.xy);\n"
+    "    #endif\n"
     "    fragColor = color;\n"
     "}\n";
 #endif /* !USE_EPOXY */
@@ -746,44 +790,22 @@ static bool is_shadertoy_format(const char *source) {
      * Parameter names can be anything (fragColor/fragCoord, o/u, col/uv, etc.)
      * We'll just check for "void mainImage(" or "void mainImage (" patterns
      */
-    const char *mainImage = strstr(source, "mainImage");
-    if (!mainImage) {
-        return false;
-    }
+    const char *ptr = source;
+    while ((ptr = strstr(ptr, "mainImage"))) {
+        const char *openParen = ptr + 9;
+        while (*openParen && isspace(*openParen)) {
+            openParen++;
+        }
 
-    /* Check if it's a function definition (has opening parenthesis after mainImage) */
-    const char *openParen = mainImage + strlen("mainImage");
-    while (*openParen && isspace(*openParen)) {
-        openParen++;
-    }
-
-    if (*openParen == '(') {
-        /* Also check for 'void' keyword before mainImage (within reasonable distance) */
-        const char *checkStart = (mainImage - source) > 20 ? (mainImage - 20) : source;
-        const char *voidKeyword = strstr(checkStart, "void");
-
-        /* Check if 'void' appears before 'mainImage' in the search window */
-        if (voidKeyword && voidKeyword < mainImage) {
-            /* Check for duplicate mainImage definitions */
-            const char *second_mainImage = strstr(mainImage + 1, "void mainImage");
-            if (second_mainImage) {
-                log_error("╔══════════════════════════════════════════════════════════════╗");
-                log_error("║ ERROR: Duplicate mainImage Function Detected                ║");
-                log_error("╠══════════════════════════════════════════════════════════════╣");
-                log_error("║ Your shader has multiple 'void mainImage(...)' functions.   ║");
-                log_error("║ Shadertoy shaders should have only ONE mainImage function.  ║");
-                log_error("║                                                               ║");
-                log_error("║ Please remove duplicate function definitions.                ║");
-                log_error("╚══════════════════════════════════════════════════════════════╝");
-                return false;
-            }
-            log_debug("Detected Shadertoy format shader (mainImage function found)");
+        if (*openParen == '(') {
             return true;
         }
+        ptr++;
     }
-
     return false;
 }
+
+
 
 /**
  * Skip whitespace, comments, and preprocessor directives
@@ -1517,6 +1539,9 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         return NULL;
     }
 
+    /* Fail-safe: Clamp channel count */
+    if (channel_count > 16) channel_count = 16;
+
     /* Strip #version directive from original source if present */
     const char *source_body = strip_version_directive(shadertoy_source);
 
@@ -1602,6 +1627,9 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
     }
 
     /* Handle multiple mainImage definitions (Multipass shader paste) */
+    /* Rename ALL mainImage functions sequentially (mainImag0, mainImag1...) */
+    /* This allows the wrapper to dispatch to the correct pass based on PASS_INDEX */
+    
     int main_count = 0;
     const char *ptr = source_body;
     while (*ptr) {
@@ -1615,10 +1643,9 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         ptr++;
     }
 
-    if (main_count > 1) {
-        log_info("Detected %d mainImage definitions - attempting to handle multipass paste", main_count);
+    if (main_count > 0) {
+        log_info("Detected %d mainImage definitions - enabling multipass support", main_count);
         
-        /* We need to rename all but the last mainImage */
         char *multi_fix = NULL;
         const char *src_ref = (needs_cleanup && cleaned_source) ? cleaned_source : source_body;
         size_t len = strlen(src_ref);
@@ -1627,20 +1654,18 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
         if (multi_fix) {
             strcpy(multi_fix, src_ref);
             
-            /* Replace "void ... mainImage" with "void ... mainImagX" for all but last */
+            /* Rename all mainImage to mainImag0, mainImag1, etc. */
             int found = 0;
             char *search_ptr = multi_fix;
+            
             while (*search_ptr) {
                 if (strncmp(search_ptr, "void", 4) == 0) {
                     char *check = search_ptr + 4;
                     while (*check && isspace(*check)) check++;
                     if (strncmp(check, "mainImage", 9) == 0) {
+                        /* change 'e' to '0'+n -> "mainImag0", "mainImag1", etc. */
+                        check[8] = '0' + (char)(found % 10); 
                         found++;
-                        if (found < main_count) {
-                            /* Rename this one to disable it */
-                            /* change 'e' to 'X' -> "mainImagX" */
-                            check[8] = 'X'; 
-                        }
                     }
                 }
                 search_ptr++;
@@ -1654,15 +1679,15 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
             source_body = cleaned_source;
             needs_cleanup = true;
             
-            log_info("Renamed %d extra mainImage functions to mainImagX", main_count - 1);
+            log_info("Renamed %d mainImage functions to sequential IDs (mainImag0..%d)", main_count, main_count-1);
         }
     }
 
     /* Build dynamic iChannel declarations */
     char *channel_decls = build_ichannel_declarations(source_body, channel_count);
     if (!channel_decls) {
-        log_error("Failed to build iChannel declarations");
-        return NULL;
+        log_error("Failed to build iChannel declarations - using empty fallback");
+        channel_decls = strdup("\n");
     }
 
     /* Detect GL version at runtime to choose appropriate wrapper */
@@ -1739,7 +1764,7 @@ static char *wrap_shadertoy_shader(const char *shadertoy_source, size_t channel_
     if (!wrapped) {
         log_error("Failed to allocate memory for wrapped Shadertoy shader");
         free(channel_decls);
-        return NULL;
+        return strdup(shadertoy_source);
     }
 
     /* Concatenate parts */

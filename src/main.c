@@ -41,7 +41,7 @@ static GOptionEntry options[] = {
 
 /* Print version information */
 static void print_version(void) {
-    printf("%s version %s\n", APP_NAME, VERSION);
+    printf("%s version %s [Multipass-Fixed]\n", APP_NAME, VERSION);
     printf("OpenGL ES Shader Editor for NeoWall\n\n");
 
     printf("Supported OpenGL ES versions:\n");
@@ -180,6 +180,8 @@ static gint on_command_line(GtkApplication *app,
 /* Main entry point */
 int main(int argc, char *argv[]) {
     int status;
+
+    printf("Starting gleditor [Multipass-Fixed]...\n");
 
     /* Handle help flag early (before GTK initialization) */
     for (int i = 1; i < argc; i++) {

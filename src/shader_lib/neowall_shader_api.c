@@ -50,6 +50,9 @@ neowall_shader_result_t neowall_shader_compile(
         return result;
     }
 
+    if (options->pass_index >= 0) {
+        fprintf(f, "#define PASS_INDEX %d\n", options->pass_index);
+    }
     fprintf(f, "%s", shader_source);
     fclose(f);
 

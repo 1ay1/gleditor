@@ -27,6 +27,7 @@ typedef struct {
     bool use_es3;             /* Use OpenGL ES 3.0 (true) or ES 2.0 (false) */
     int channel_count;        /* Number of texture channels (0-4, 0 = default 4) */
     bool verbose_errors;      /* Include full shader source in error messages */
+    int pass_index;           /* Pass index for multipass shaders (-1 = none) */
 } neowall_shader_options_t;
 
 /**
@@ -35,7 +36,8 @@ typedef struct {
 #define NEOWALL_SHADER_OPTIONS_DEFAULT { \
     .use_es3 = false, \
     .channel_count = 4, \
-    .verbose_errors = false \
+    .verbose_errors = false, \
+    .pass_index = -1 \
 }
 
 /**
