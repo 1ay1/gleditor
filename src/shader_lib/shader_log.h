@@ -16,9 +16,10 @@
 #define LOG_LEVEL_INFO  2
 #define LOG_LEVEL_DEBUG 3
 
-/* Default log level (can be overridden) */
+/* Default log level (can be overridden at compile time with -DSHADER_LIB_LOG_LEVEL=N)
+ * Set to INFO by default for better performance (DEBUG causes significant overhead) */
 #ifndef SHADER_LIB_LOG_LEVEL
-#define SHADER_LIB_LOG_LEVEL LOG_LEVEL_DEBUG
+#define SHADER_LIB_LOG_LEVEL LOG_LEVEL_INFO
 #endif
 
 /* Get current timestamp for logging */

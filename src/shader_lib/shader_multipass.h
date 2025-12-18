@@ -54,6 +54,21 @@ typedef struct {
     int wrap;                  /* GL_REPEAT, GL_CLAMP_TO_EDGE, etc. */
 } multipass_channel_t;
 
+/* Cached uniform locations for performance (avoid glGetUniformLocation every frame) */
+typedef struct {
+    GLint iTime;
+    GLint iTimeDelta;
+    GLint iFrameRate;
+    GLint iFrame;
+    GLint iResolution;
+    GLint iMouse;
+    GLint iDate;
+    GLint iSampleRate;
+    GLint iChannelResolution;
+    GLint iChannel[MULTIPASS_MAX_CHANNELS];
+    bool cached;                /* True if locations have been cached */
+} uniform_locations_t;
+
 /* Single pass configuration */
 typedef struct {
     multipass_type_t type;
@@ -69,6 +84,9 @@ typedef struct {
     bool needs_clear;                        /* Clear buffer on first frame */
     bool is_compiled;                        /* Compilation status */
     char *compile_error;                     /* Compilation error message */
+    uniform_locations_t uniforms;            /* Cached uniform locations */
+    bool needs_mipmaps;                      /* True if shader uses textureLod */
+    int channel_buffer_index[MULTIPASS_MAX_CHANNELS]; /* Cached buffer pass indices for channels (-1 if not a buffer) */
 } multipass_pass_t;
 
 /* Complete multipass shader configuration */
@@ -87,6 +105,24 @@ typedef struct {
     GLuint noise_texture;                    /* Default noise texture */
     GLuint keyboard_texture;                 /* Keyboard state texture */
     GLint default_framebuffer;               /* Default framebuffer ID (may not be 0 in GTK) */
+    
+    /* Performance settings */
+    float resolution_scale;                  /* Buffer resolution scale (1.0 = full, 0.5 = half) */
+    float target_resolution_scale;           /* Target scale (for smooth transitions) */
+    float min_resolution_scale;              /* Minimum allowed scale */
+    float max_resolution_scale;              /* Maximum allowed scale */
+    int scaled_width;                        /* Cached scaled width */
+    int scaled_height;                       /* Cached scaled height */
+    
+    /* Adaptive resolution scaling */
+    bool adaptive_resolution;                /* Enable automatic resolution adjustment */
+    float target_fps;                        /* Target FPS (default 60) */
+    float current_fps;                       /* Current measured FPS */
+    float fps_history[8];                    /* Rolling FPS history for smoothing */
+    int fps_history_index;                   /* Current index in history */
+    double last_fps_update_time;             /* Time of last FPS measurement */
+    int frames_since_fps_update;             /* Frame counter for FPS calculation */
+    double last_scale_adjust_time;           /* Time of last scale adjustment */
     
     bool is_initialized;                     /* OpenGL resources initialized */
 } multipass_shader_t;
@@ -292,6 +328,64 @@ void multipass_swap_buffers(multipass_shader_t *shader, int pass_index);
  * @param shader Multipass shader
  */
 void multipass_reset(multipass_shader_t *shader);
+
+/**
+ * Set resolution scale for buffer passes (performance optimization)
+ * Lower values = faster but less detail
+ * 
+ * @param shader Multipass shader
+ * @param scale Resolution scale (1.0 = full, 0.5 = half, 0.25 = quarter)
+ */
+void multipass_set_resolution_scale(multipass_shader_t *shader, float scale);
+
+/**
+ * Get current resolution scale
+ * 
+ * @param shader Multipass shader
+ * @return Current resolution scale
+ */
+float multipass_get_resolution_scale(const multipass_shader_t *shader);
+
+/**
+ * Enable/disable adaptive resolution scaling
+ * When enabled, resolution automatically adjusts to maintain target FPS
+ * 
+ * @param shader Multipass shader
+ * @param enabled Enable adaptive scaling
+ * @param target_fps Target FPS to maintain (default 60)
+ * @param min_scale Minimum resolution scale (default 0.25)
+ * @param max_scale Maximum resolution scale (default 1.0)
+ */
+void multipass_set_adaptive_resolution(multipass_shader_t *shader, 
+                                        bool enabled,
+                                        float target_fps,
+                                        float min_scale,
+                                        float max_scale);
+
+/**
+ * Check if adaptive resolution is enabled
+ * 
+ * @param shader Multipass shader
+ * @return true if adaptive resolution is enabled
+ */
+bool multipass_is_adaptive_resolution(const multipass_shader_t *shader);
+
+/**
+ * Get current measured FPS
+ * 
+ * @param shader Multipass shader
+ * @return Current FPS (smoothed average)
+ */
+float multipass_get_current_fps(const multipass_shader_t *shader);
+
+/**
+ * Update adaptive resolution (called internally each frame)
+ * Adjusts resolution scale based on current FPS
+ * 
+ * @param shader Multipass shader
+ * @param current_time Current time in seconds
+ */
+void multipass_update_adaptive_resolution(multipass_shader_t *shader, double current_time);
 
 /* ============================================
  * Query Functions

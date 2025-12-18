@@ -140,6 +140,14 @@ static void on_gl_realize(GtkGLArea *area, gpointer user_data) {
         return;
     }
 
+    /* Log OpenGL info for debugging performance issues */
+    const char *gl_version = (const char *)glGetString(GL_VERSION);
+    const char *gl_renderer = (const char *)glGetString(GL_RENDERER);
+    const char *gl_vendor = (const char *)glGetString(GL_VENDOR);
+    g_message("OpenGL Version: %s", gl_version ? gl_version : "unknown");
+    g_message("OpenGL Renderer: %s", gl_renderer ? gl_renderer : "unknown");
+    g_message("OpenGL Vendor: %s", gl_vendor ? gl_vendor : "unknown");
+
     /* Setup fullscreen quad vertices */
     static const float vertices[] = {
         -1.0f, -1.0f,  /* Bottom-left */
@@ -361,6 +369,12 @@ GtkWidget *editor_preview_create(void) {
 
     /* Create GL area widget */
     preview_state.gl_area = gtk_gl_area_new();
+    
+    /* Don't force OpenGL ES - let GTK use native desktop OpenGL for best performance
+     * Desktop OpenGL 3.3+ is faster than ES compatibility mode on NVIDIA/AMD */
+    gtk_gl_area_set_use_es(GTK_GL_AREA(preview_state.gl_area), FALSE);
+    gtk_gl_area_set_required_version(GTK_GL_AREA(preview_state.gl_area), 3, 3);
+    
     gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(preview_state.gl_area), FALSE);
     gtk_gl_area_set_has_stencil_buffer(GTK_GL_AREA(preview_state.gl_area), FALSE);
 
@@ -553,6 +567,38 @@ void editor_preview_reset_time(void) {
 
 double editor_preview_get_fps(void) {
     return preview_state.current_fps;
+}
+
+float editor_preview_get_resolution_scale(void) {
+    if (preview_state.multipass_shader) {
+        return multipass_get_resolution_scale(preview_state.multipass_shader);
+    }
+    return 1.0f;
+}
+
+void editor_preview_set_resolution_scale(float scale) {
+    if (preview_state.multipass_shader) {
+        /* Disable adaptive when manually setting scale */
+        multipass_set_adaptive_resolution(preview_state.multipass_shader, false, 0, 0, 0);
+        multipass_set_resolution_scale(preview_state.multipass_shader, scale);
+    }
+}
+
+void editor_preview_set_adaptive_resolution(bool enabled) {
+    if (preview_state.multipass_shader) {
+        multipass_set_adaptive_resolution(preview_state.multipass_shader, 
+                                          enabled, 
+                                          55.0f,   /* target FPS */
+                                          0.25f,   /* min scale */
+                                          1.0f);   /* max scale */
+    }
+}
+
+bool editor_preview_is_adaptive_resolution(void) {
+    if (preview_state.multipass_shader) {
+        return multipass_is_adaptive_resolution(preview_state.multipass_shader);
+    }
+    return false;
 }
 
 void editor_preview_get_mouse(float *x, float *y) {

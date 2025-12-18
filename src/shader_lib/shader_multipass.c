@@ -13,6 +13,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <math.h>
 #include <stdarg.h>
 
 /* ============================================
@@ -673,10 +674,14 @@ void multipass_free_parse_result(multipass_parse_result_t *result) {
  * ============================================ */
 
 /* Shadertoy wrapper prefix for ES 3.0 / Desktop OpenGL */
+/* Use desktop GLSL 330 for better performance on desktop GPUs
+ * Falls back gracefully on ES contexts */
 static const char *multipass_wrapper_prefix =
-    "#version 300 es\n"
+    "#version 330 core\n"
+    "#ifdef GL_ES\n"
     "precision highp float;\n"
     "precision highp int;\n"
+    "#endif\n"
     "\n"
     "// Shadertoy compatibility uniforms\n"
     "uniform float iTime;\n"
@@ -888,9 +893,9 @@ static char *wrap_pass_source(const char *common, const char *pass_source) {
     return wrapped;
 }
 
-/* Vertex shader for fullscreen quad */
+/* Vertex shader for fullscreen quad - use desktop GLSL 330 for performance */
 static const char *fullscreen_vertex_shader =
-    "#version 300 es\n"
+    "#version 330 core\n"
     "in vec2 position;\n"
     "void main() {\n"
     "    gl_Position = vec4(position, 0.0, 1.0);\n"
@@ -921,6 +926,24 @@ multipass_shader_t *multipass_create_from_parsed(const multipass_parse_result_t 
     shader->pass_count = parse_result->pass_count;
     shader->image_pass_index = -1;
     shader->has_buffers = false;
+    shader->resolution_scale = 1.0f;   /* Start at full resolution */
+    shader->target_resolution_scale = 1.0f;
+    shader->min_resolution_scale = 0.25f;
+    shader->max_resolution_scale = 1.0f;
+    shader->scaled_width = 0;
+    shader->scaled_height = 0;
+    
+    /* Adaptive resolution defaults */
+    shader->adaptive_resolution = true;  /* Enable by default */
+    shader->target_fps = 55.0f;          /* Target slightly below 60 for headroom */
+    shader->current_fps = 60.0f;
+    shader->fps_history_index = 0;
+    shader->last_fps_update_time = 0.0;
+    shader->frames_since_fps_update = 0;
+    shader->last_scale_adjust_time = 0.0;
+    for (int i = 0; i < 8; i++) {
+        shader->fps_history[i] = 60.0f;
+    }
 
     for (int i = 0; i < parse_result->pass_count; i++) {
         multipass_pass_t *pass = &shader->passes[i];
@@ -1028,11 +1051,29 @@ bool multipass_init_gl(multipass_shader_t *shader, int width, int height) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
+    /* Calculate scaled resolution for buffer passes */
+    int scaled_w = (int)(width * shader->resolution_scale);
+    int scaled_h = (int)(height * shader->resolution_scale);
+    if (scaled_w < 1) scaled_w = 1;
+    if (scaled_h < 1) scaled_h = 1;
+    shader->scaled_width = scaled_w;
+    shader->scaled_height = scaled_h;
+    
+    log_info("Resolution scale: %.2f (buffers: %dx%d, output: %dx%d)",
+             shader->resolution_scale, scaled_w, scaled_h, width, height);
+
     /* Initialize each pass */
     for (int i = 0; i < shader->pass_count; i++) {
         multipass_pass_t *pass = &shader->passes[i];
-        pass->width = width;
-        pass->height = height;
+        
+        /* Buffer passes use scaled resolution, Image pass uses full resolution */
+        if (pass->type >= PASS_TYPE_BUFFER_A && pass->type <= PASS_TYPE_BUFFER_D) {
+            pass->width = scaled_w;
+            pass->height = scaled_h;
+        } else {
+            pass->width = width;
+            pass->height = height;
+        }
         pass->ping_pong_index = 0;
         pass->needs_clear = true;
 
@@ -1043,18 +1084,20 @@ bool multipass_init_gl(multipass_shader_t *shader, int width, int height) {
 
             for (int t = 0; t < 2; t++) {
                 glBindTexture(GL_TEXTURE_2D, pass->textures[t]);
-                /* Use GL_RGBA16F for HDR support:
-                 * - Bloom requires values > 1.0 to pass BLOOM_THRESHOLD
-                 * - This matches Shadertoy's actual buffer behavior */
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0,
-                            GL_RGBA, GL_FLOAT, NULL);
-                /* Use LINEAR_MIPMAP_LINEAR for textureLod support (bloom needs this) */
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                /* Use GL_RGBA16F for good precision with half the bandwidth
+                 * 16-bit floats are faster for memory-bound shaders
+                 * Use scaled resolution for buffer passes */
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, pass->width, pass->height, 0,
+                            GL_RGBA, GL_HALF_FLOAT, NULL);
+                /* 
+                 * Start with GL_LINEAR - we'll upgrade to GL_LINEAR_MIPMAP_LINEAR
+                 * in multipass_compile_all() if any shader uses textureLod on this buffer.
+                 * This avoids mipmap generation overhead for buffers that don't need it.
+                 */
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-                /* Pre-allocate mipmap levels */
-                glGenerateMipmap(GL_TEXTURE_2D);
             }
 
             log_info("Created FBO and textures for %s", pass->name);
@@ -1065,6 +1108,67 @@ bool multipass_init_gl(multipass_shader_t *shader, int width, int height) {
     shader->frame_count = 0;
 
     return true;
+}
+
+/* Cache uniform locations after compilation to avoid glGetUniformLocation per frame */
+static void cache_uniform_locations(multipass_pass_t *pass) {
+    if (!pass || !pass->program) return;
+    
+    GLuint prog = pass->program;
+    uniform_locations_t *u = &pass->uniforms;
+    
+    u->iTime = glGetUniformLocation(prog, "iTime");
+    u->iTimeDelta = glGetUniformLocation(prog, "iTimeDelta");
+    u->iFrameRate = glGetUniformLocation(prog, "iFrameRate");
+    u->iFrame = glGetUniformLocation(prog, "iFrame");
+    u->iResolution = glGetUniformLocation(prog, "iResolution");
+    u->iMouse = glGetUniformLocation(prog, "iMouse");
+    u->iDate = glGetUniformLocation(prog, "iDate");
+    u->iSampleRate = glGetUniformLocation(prog, "iSampleRate");
+    u->iChannelResolution = glGetUniformLocation(prog, "iChannelResolution");
+    
+    u->iChannel[0] = glGetUniformLocation(prog, "iChannel0");
+    u->iChannel[1] = glGetUniformLocation(prog, "iChannel1");
+    u->iChannel[2] = glGetUniformLocation(prog, "iChannel2");
+    u->iChannel[3] = glGetUniformLocation(prog, "iChannel3");
+    
+    u->cached = true;
+    
+    log_debug("Cached uniform locations for %s: iTime=%d, iResolution=%d, iFrame=%d",
+              pass->name, u->iTime, u->iResolution, u->iFrame);
+}
+
+/* Cache buffer pass indices for each channel to avoid linear search every frame */
+static void cache_channel_buffer_indices(multipass_shader_t *shader) {
+    if (!shader) return;
+    
+    for (int p = 0; p < shader->pass_count; p++) {
+        multipass_pass_t *pass = &shader->passes[p];
+        
+        for (int c = 0; c < MULTIPASS_MAX_CHANNELS; c++) {
+            pass->channel_buffer_index[c] = -1;  /* Default: not a buffer */
+            
+            channel_source_t src = pass->channels[c].source;
+            if (src >= CHANNEL_SOURCE_BUFFER_A && src <= CHANNEL_SOURCE_BUFFER_D) {
+                int target_type = PASS_TYPE_BUFFER_A + (src - CHANNEL_SOURCE_BUFFER_A);
+                
+                /* Find the pass index for this buffer type */
+                for (int i = 0; i < shader->pass_count; i++) {
+                    if ((int)shader->passes[i].type == target_type) {
+                        pass->channel_buffer_index[c] = i;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    log_debug("Cached channel buffer indices for %d passes", shader->pass_count);
+}
+
+/* Check if shader source uses textureLod (needs mipmaps) */
+static bool shader_uses_textureLod(const char *source) {
+    return source && strstr(source, "textureLod") != NULL;
 }
 
 bool multipass_compile_pass(multipass_shader_t *shader, int pass_index) {
@@ -1110,6 +1214,15 @@ bool multipass_compile_pass(multipass_shader_t *shader, int pass_index) {
 
     pass->program = program;
     pass->is_compiled = true;
+    
+    /* Cache uniform locations for performance */
+    cache_uniform_locations(pass);
+    
+    /* Check if this shader uses textureLod (needs mipmaps) */
+    pass->needs_mipmaps = shader_uses_textureLod(pass->source);
+    if (pass->needs_mipmaps) {
+        log_debug("Pass %s uses textureLod, will generate mipmaps", pass->name);
+    }
 
     log_info("Successfully compiled pass %s (program=%u)", pass->name, program);
 
@@ -1126,6 +1239,51 @@ bool multipass_compile_all(multipass_shader_t *shader) {
             all_success = false;
         }
     }
+    
+    /* Cache buffer pass indices for fast texture binding */
+    cache_channel_buffer_indices(shader);
+    
+    /* 
+     * Determine which buffer passes need mipmaps based on whether
+     * any pass that READS from them uses textureLod.
+     * This is more accurate than checking the buffer's own source.
+     */
+    for (int buf = 0; buf < shader->pass_count; buf++) {
+        multipass_pass_t *buf_pass = &shader->passes[buf];
+        if (buf_pass->type < PASS_TYPE_BUFFER_A || buf_pass->type > PASS_TYPE_BUFFER_D) {
+            continue;  /* Only check buffer passes */
+        }
+        
+        buf_pass->needs_mipmaps = false;
+        
+        /* Check all passes that might read from this buffer */
+        for (int reader = 0; reader < shader->pass_count; reader++) {
+            multipass_pass_t *reader_pass = &shader->passes[reader];
+            if (!reader_pass->source) continue;
+            
+            /* Check if this reader uses textureLod */
+            if (!shader_uses_textureLod(reader_pass->source)) continue;
+            
+            /* Check if this reader reads from our buffer */
+            for (int c = 0; c < MULTIPASS_MAX_CHANNELS; c++) {
+                channel_source_t src = reader_pass->channels[c].source;
+                if (src == CHANNEL_SOURCE_BUFFER_A + (buf_pass->type - PASS_TYPE_BUFFER_A)) {
+                    buf_pass->needs_mipmaps = true;
+                    log_debug("Buffer %s needs mipmaps: read by %s via iChannel%d",
+                              buf_pass->name, reader_pass->name, c);
+                    
+                    /* Upgrade texture filter to support mipmaps */
+                    for (int t = 0; t < 2; t++) {
+                        glBindTexture(GL_TEXTURE_2D, buf_pass->textures[t]);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                        glGenerateMipmap(GL_TEXTURE_2D);
+                    }
+                    break;
+                }
+            }
+            if (buf_pass->needs_mipmaps) break;
+        }
+    }
 
     return all_success;
 }
@@ -1133,25 +1291,55 @@ bool multipass_compile_all(multipass_shader_t *shader) {
 void multipass_resize(multipass_shader_t *shader, int width, int height) {
     if (!shader || !shader->is_initialized) return;
 
+    /* Calculate scaled resolution for buffer passes */
+    int scaled_w = (int)(width * shader->resolution_scale);
+    int scaled_h = (int)(height * shader->resolution_scale);
+    if (scaled_w < 1) scaled_w = 1;
+    if (scaled_h < 1) scaled_h = 1;
+
+    /* Quick check: if Image pass has correct size and scale unchanged, skip */
+    if (shader->image_pass_index >= 0) {
+        multipass_pass_t *img = &shader->passes[shader->image_pass_index];
+        if (img->width == width && img->height == height &&
+            shader->scaled_width == scaled_w && shader->scaled_height == scaled_h) {
+            return;
+        }
+    }
+
+    shader->scaled_width = scaled_w;
+    shader->scaled_height = scaled_h;
+
     for (int i = 0; i < shader->pass_count; i++) {
         multipass_pass_t *pass = &shader->passes[i];
 
-        if (pass->width == width && pass->height == height) {
+        /* Buffer passes use scaled resolution, Image pass uses full resolution */
+        int target_w, target_h;
+        if (pass->type >= PASS_TYPE_BUFFER_A && pass->type <= PASS_TYPE_BUFFER_D) {
+            target_w = scaled_w;
+            target_h = scaled_h;
+        } else {
+            target_w = width;
+            target_h = height;
+        }
+
+        if (pass->width == target_w && pass->height == target_h) {
             continue;
         }
 
-        pass->width = width;
-        pass->height = height;
+        pass->width = target_w;
+        pass->height = target_h;
 
         /* Resize buffer textures */
         if (pass->type >= PASS_TYPE_BUFFER_A && pass->type <= PASS_TYPE_BUFFER_D) {
             for (int t = 0; t < 2; t++) {
                 glBindTexture(GL_TEXTURE_2D, pass->textures[t]);
-                /* Use GL_RGBA16F for HDR bloom support */
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0,
-                            GL_RGBA, GL_FLOAT, NULL);
-                /* Regenerate mipmaps for new size */
-                glGenerateMipmap(GL_TEXTURE_2D);
+                /* Use GL_RGBA16F for HDR bloom support - matches init */
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, target_w, target_h, 0,
+                            GL_RGBA, GL_HALF_FLOAT, NULL);
+                /* Only regenerate mipmaps if this buffer needs them */
+                if (pass->needs_mipmaps) {
+                    glGenerateMipmap(GL_TEXTURE_2D);
+                }
             }
             pass->needs_clear = true;
         }
@@ -1202,40 +1390,33 @@ void multipass_set_uniforms(multipass_shader_t *shader,
 
     glUseProgram(pass->program);
 
-    GLint loc;
+    /* Use cached uniform locations for performance */
+    const uniform_locations_t *u = &pass->uniforms;
 
     /* Time uniforms */
-    loc = glGetUniformLocation(pass->program, "iTime");
-    if (loc >= 0) glUniform1f(loc, shader_time);
-
-    loc = glGetUniformLocation(pass->program, "iTimeDelta");
-    if (loc >= 0) glUniform1f(loc, 1.0f / 60.0f);  /* Approximate */
-
-    loc = glGetUniformLocation(pass->program, "iFrameRate");
-    if (loc >= 0) glUniform1f(loc, 60.0f);
-
-    loc = glGetUniformLocation(pass->program, "iFrame");
-    if (loc >= 0) glUniform1i(loc, shader->frame_count);
+    if (u->iTime >= 0) glUniform1f(u->iTime, shader_time);
+    if (u->iTimeDelta >= 0) glUniform1f(u->iTimeDelta, 1.0f / 60.0f);
+    if (u->iFrameRate >= 0) glUniform1f(u->iFrameRate, 60.0f);
+    if (u->iFrame >= 0) glUniform1i(u->iFrame, shader->frame_count);
 
     /* Resolution */
-    loc = glGetUniformLocation(pass->program, "iResolution");
-    if (loc >= 0) {
+    if (u->iResolution >= 0) {
         float w = (float)pass->width;
         float h = (float)pass->height;
-        glUniform3f(loc, w, h, w / h);
+        glUniform3f(u->iResolution, w, h, w / h);
     }
 
     /* Mouse */
-    loc = glGetUniformLocation(pass->program, "iMouse");
-    if (loc >= 0) {
+    if (u->iMouse >= 0) {
         float click_x = mouse_click ? mouse_x : 0.0f;
         float click_y = mouse_click ? mouse_y : 0.0f;
-        glUniform4f(loc, mouse_x, mouse_y, click_x, click_y);
+        glUniform4f(u->iMouse, mouse_x, mouse_y, click_x, click_y);
     }
 
-    /* Date */
-    loc = glGetUniformLocation(pass->program, "iDate");
-    if (loc >= 0) {
+    /* Date - only update if uniform is used (avoid syscall overhead) */
+    if (u->iDate >= 0) {
+        /* Cache date info - only update once per second would be even better,
+         * but for now just use the cached location */
         time_t t = time(NULL);
         struct tm *tm_info = localtime(&t);
         if (tm_info) {
@@ -1245,23 +1426,21 @@ void multipass_set_uniforms(multipass_shader_t *shader,
             float seconds = (float)(tm_info->tm_hour * 3600 +
                                     tm_info->tm_min * 60 +
                                     tm_info->tm_sec);
-            glUniform4f(loc, year, month, day, seconds);
+            glUniform4f(u->iDate, year, month, day, seconds);
         }
     }
 
-    loc = glGetUniformLocation(pass->program, "iSampleRate");
-    if (loc >= 0) glUniform1f(loc, 44100.0f);
+    if (u->iSampleRate >= 0) glUniform1f(u->iSampleRate, 44100.0f);
 
-    /* Channel resolutions */
-    loc = glGetUniformLocation(pass->program, "iChannelResolution");
-    if (loc >= 0) {
-        float resolutions[12] = {
+    /* Channel resolutions - use static data */
+    if (u->iChannelResolution >= 0) {
+        static const float resolutions[12] = {
             256.0f, 256.0f, 1.0f,
             256.0f, 256.0f, 1.0f,
             256.0f, 256.0f, 1.0f,
             256.0f, 256.0f, 1.0f
         };
-        glUniform3fv(loc, 4, resolutions);
+        glUniform3fv(u->iChannelResolution, 4, resolutions);
     }
 }
 
@@ -1273,7 +1452,13 @@ void multipass_bind_textures(multipass_shader_t *shader, int pass_index) {
 
     log_debug_frame(shader->frame_count, "Binding textures for pass %d (%s):", pass_index, pass->name);
 
+    /* Use cached uniform locations */
+    const uniform_locations_t *u = &pass->uniforms;
+
     for (int c = 0; c < MULTIPASS_MAX_CHANNELS; c++) {
+        /* Skip if this channel uniform doesn't exist in the shader */
+        if (u->iChannel[c] < 0) continue;
+        
         glActiveTexture(GL_TEXTURE0 + c);
 
         GLuint tex = shader->noise_texture;  /* Default to noise */
@@ -1285,15 +1470,9 @@ void multipass_bind_textures(multipass_shader_t *shader, int pass_index) {
             case CHANNEL_SOURCE_BUFFER_B:
             case CHANNEL_SOURCE_BUFFER_C:
             case CHANNEL_SOURCE_BUFFER_D: {
-                int buf_idx = pass->channels[c].source - CHANNEL_SOURCE_BUFFER_A;
-                multipass_pass_t *buf_pass = NULL;
-
-                for (int i = 0; i < shader->pass_count; i++) {
-                    if ((int)shader->passes[i].type == PASS_TYPE_BUFFER_A + buf_idx) {
-                        buf_pass = &shader->passes[i];
-                        break;
-                    }
-                }
+                /* Use cached buffer index instead of linear search */
+                int cached_idx = pass->channel_buffer_index[c];
+                multipass_pass_t *buf_pass = (cached_idx >= 0) ? &shader->passes[cached_idx] : NULL;
 
                 if (buf_pass && buf_pass->textures[0]) {
                     /*
@@ -1306,6 +1485,7 @@ void multipass_bind_textures(multipass_shader_t *shader, int pass_index) {
                     log_debug_frame(shader->frame_count, "  iChannel%d: Bound to %s tex[%d]=%u",
                               c, buf_pass->name, buf_pass->ping_pong_index, tex);
                 } else {
+                    int buf_idx = pass->channels[c].source - CHANNEL_SOURCE_BUFFER_A;
                     log_debug_frame(shader->frame_count, "  iChannel%d: Buffer %c not found, using noise", c, 'A' + buf_idx);
                 }
                 break;
@@ -1327,17 +1507,9 @@ void multipass_bind_textures(multipass_shader_t *shader, int pass_index) {
         }
 
         glBindTexture(GL_TEXTURE_2D, tex);
-
-        /* Set texture parameters for proper sampling */
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        char name[16];
-        snprintf(name, sizeof(name), "iChannel%d", c);
-        GLint loc = glGetUniformLocation(pass->program, name);
-        if (loc >= 0) {
-            glUniform1i(loc, c);
-        }
+        
+        /* Use cached uniform location instead of glGetUniformLocation */
+        glUniform1i(u->iChannel[c], c);
     }
 }
 
@@ -1361,15 +1533,11 @@ void multipass_render_pass(multipass_shader_t *shader,
     multipass_pass_t *pass = &shader->passes[pass_index];
 
     if (!pass->is_compiled || !pass->program) {
-        log_debug("Skipping pass %d (%s): not compiled", pass_index, pass->name);
         return;
     }
 
     log_debug_frame(shader->frame_count, "Rendering pass %d: %s (program=%u, fbo=%u, size=%dx%d)",
               pass_index, pass->name, pass->program, pass->fbo, pass->width, pass->height);
-
-    /* Clear any stale GL errors before rendering */
-    while (glGetError() != GL_NO_ERROR) {}
 
     /* Bind FBO for buffer passes, or default framebuffer for Image pass */
     if (pass->fbo) {
@@ -1390,14 +1558,6 @@ void multipass_render_pass(multipass_shader_t *shader,
                   pass_index, write_idx, pass->textures[write_idx],
                   pass->ping_pong_index, pass->textures[pass->ping_pong_index]);
 
-        /* Check framebuffer status */
-        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
-            log_error("Framebuffer not complete for pass %d: 0x%x", pass_index, status);
-            glBindFramebuffer(GL_FRAMEBUFFER, shader->default_framebuffer);
-            return;
-        }
-
         /* Clear on first frame */
         if (pass->needs_clear) {
             glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1417,27 +1577,21 @@ void multipass_render_pass(multipass_shader_t *shader,
     multipass_set_uniforms(shader, pass_index, time, mouse_x, mouse_y, mouse_click);
     multipass_bind_textures(shader, pass_index);
 
-    /* Draw fullscreen quad */
-#if defined(HAVE_GLES3) || defined(USE_EPOXY)
-    glBindVertexArray(shader->vao);
-#endif
-    glBindBuffer(GL_ARRAY_BUFFER, shader->vbo);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
+    /* Draw fullscreen quad - VAO/VBO already bound in multipass_render */
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-    glDisableVertexAttribArray(0);
 
     /* For buffer passes, finalize the render */
     if (pass->fbo) {
         int write_idx = 1 - pass->ping_pong_index;
 
-        /* Generate mipmaps for the texture we just rendered to (needed for textureLod) */
-        glBindTexture(GL_TEXTURE_2D, pass->textures[write_idx]);
-        glGenerateMipmap(GL_TEXTURE_2D);
-        log_debug_frame(shader->frame_count, "Generated mipmaps for pass %d texture[%d]=%u",
-                  pass_index, write_idx, pass->textures[write_idx]);
+        /* Only generate mipmaps if any shader actually uses textureLod
+         * This is expensive so we only do it when needed */
+        if (pass->needs_mipmaps) {
+            glBindTexture(GL_TEXTURE_2D, pass->textures[write_idx]);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            log_debug_frame(shader->frame_count, "Generated mipmaps for pass %d texture[%d]=%u",
+                      pass_index, write_idx, pass->textures[write_idx]);
+        }
 
         /*
          * SWAP ping-pong index AFTER rendering:
@@ -1448,17 +1602,6 @@ void multipass_render_pass(multipass_shader_t *shader,
         log_debug_frame(shader->frame_count, "Pass %d: ping_pong_index now %d (points to freshly rendered texture)",
                   pass_index, pass->ping_pong_index);
     }
-
-    /* Check for GL errors */
-    GLenum err = glGetError();
-    if (err != GL_NO_ERROR) {
-        log_error("GL error after rendering pass %d (%s): 0x%x", pass_index, pass->name, err);
-    }
-
-    /* Unbind FBO only for buffer passes - restore to default */
-    if (pass->fbo) {
-        glBindFramebuffer(GL_FRAMEBUFFER, shader->default_framebuffer);
-    }
 }
 
 void multipass_render(multipass_shader_t *shader,
@@ -1467,14 +1610,47 @@ void multipass_render(multipass_shader_t *shader,
                       bool mouse_click) {
     if (!shader || !shader->is_initialized) return;
 
-    /* Query the CURRENT framebuffer binding - this is GTK's rendering FBO.
-     * GTK's GtkGLArea uses its own FBO, not framebuffer 0.
-     * We must capture this at render time, not init time. */
+    /* Update adaptive resolution using wall-clock time (not shader time)
+     * This ensures proper FPS measurement even when shader time is paused/scaled */
+    double wall_time;
+#ifdef _WIN32
+    LARGE_INTEGER freq, counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    wall_time = (double)counter.QuadPart / (double)freq.QuadPart;
+#else
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    wall_time = (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+#endif
+    multipass_update_adaptive_resolution(shader, wall_time);
+
+    /* Query the CURRENT framebuffer binding every frame
+     * GTK's GtkGLArea can change its FBO on resize, so we must always query */
     GLint current_fbo = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &current_fbo);
     shader->default_framebuffer = current_fbo;
 
     log_debug_frame(shader->frame_count, "=== Frame %d ===", shader->frame_count);
+
+    /* Set optimal render state ONCE at start of frame */
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glDepthMask(GL_FALSE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+    /*
+     * Setup vertex state ONCE for all passes (major performance optimization)
+     * All passes use the same fullscreen quad
+     */
+#if defined(HAVE_GLES3) || defined(USE_EPOXY)
+    glBindVertexArray(shader->vao);
+#endif
+    glBindBuffer(GL_ARRAY_BUFFER, shader->vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
     /*
      * Shadertoy rendering order:
@@ -1498,11 +1674,7 @@ void multipass_render(multipass_shader_t *shader,
         log_debug_frame(shader->frame_count, "Executing Image pass (index=%d)", shader->image_pass_index);
 
         /* Ensure we're rendering to the default framebuffer (screen) */
-        /* GTK may use a non-zero FBO as the default, so use the stored value */
         glBindFramebuffer(GL_FRAMEBUFFER, shader->default_framebuffer);
-
-        /* Clear any stale GL errors */
-        while (glGetError() != GL_NO_ERROR) {}
 
         /* Get viewport size from Image pass */
         multipass_pass_t *image_pass = &shader->passes[shader->image_pass_index];
@@ -1519,7 +1691,142 @@ void multipass_render(multipass_shader_t *shader,
                   shader->image_pass_index, shader->pass_count);
     }
 
+    /* Cleanup vertex state */
+    glDisableVertexAttribArray(0);
+
     shader->frame_count++;
+    shader->frames_since_fps_update++;
+}
+
+void multipass_set_resolution_scale(multipass_shader_t *shader, float scale) {
+    if (!shader) return;
+    
+    /* Clamp scale to reasonable values */
+    if (scale < 0.1f) scale = 0.1f;
+    if (scale > 2.0f) scale = 2.0f;
+    
+    if (shader->resolution_scale != scale) {
+        shader->resolution_scale = scale;
+        /* Force resize on next frame by invalidating cached size */
+        shader->scaled_width = 0;
+        shader->scaled_height = 0;
+        log_info("Resolution scale changed to %.2f", scale);
+    }
+}
+
+float multipass_get_resolution_scale(const multipass_shader_t *shader) {
+    return shader ? shader->resolution_scale : 1.0f;
+}
+
+void multipass_set_adaptive_resolution(multipass_shader_t *shader, 
+                                        bool enabled,
+                                        float target_fps,
+                                        float min_scale,
+                                        float max_scale) {
+    if (!shader) return;
+    
+    shader->adaptive_resolution = enabled;
+    shader->target_fps = (target_fps > 0) ? target_fps : 55.0f;
+    shader->min_resolution_scale = (min_scale > 0.1f) ? min_scale : 0.1f;
+    shader->max_resolution_scale = (max_scale <= 2.0f) ? max_scale : 2.0f;
+    
+    if (shader->min_resolution_scale > shader->max_resolution_scale) {
+        shader->min_resolution_scale = shader->max_resolution_scale;
+    }
+    
+    log_info("Adaptive resolution: %s, target=%.0f FPS, scale range=[%.2f, %.2f]",
+             enabled ? "ON" : "OFF", shader->target_fps,
+             shader->min_resolution_scale, shader->max_resolution_scale);
+}
+
+bool multipass_is_adaptive_resolution(const multipass_shader_t *shader) {
+    return shader ? shader->adaptive_resolution : false;
+}
+
+float multipass_get_current_fps(const multipass_shader_t *shader) {
+    return shader ? shader->current_fps : 0.0f;
+}
+
+void multipass_update_adaptive_resolution(multipass_shader_t *shader, double current_time) {
+    if (!shader || !shader->adaptive_resolution) return;
+    
+    /* Initialize timing on first call */
+    if (shader->last_fps_update_time == 0.0) {
+        shader->last_fps_update_time = current_time;
+        shader->last_scale_adjust_time = current_time;
+        return;
+    }
+    
+    /* Update FPS measurement every 0.25 seconds */
+    double time_since_fps_update = current_time - shader->last_fps_update_time;
+    if (time_since_fps_update >= 0.25 && shader->frames_since_fps_update > 0) {
+        float instant_fps = (float)shader->frames_since_fps_update / (float)time_since_fps_update;
+        
+        /* Add to rolling history */
+        shader->fps_history[shader->fps_history_index] = instant_fps;
+        shader->fps_history_index = (shader->fps_history_index + 1) % 8;
+        
+        /* Calculate smoothed average FPS */
+        float sum = 0.0f;
+        for (int i = 0; i < 8; i++) {
+            sum += shader->fps_history[i];
+        }
+        shader->current_fps = sum / 8.0f;
+        
+        shader->frames_since_fps_update = 0;
+        shader->last_fps_update_time = current_time;
+    }
+    
+    /* Adjust resolution scale every 0.5 seconds based on FPS */
+    double time_since_adjust = current_time - shader->last_scale_adjust_time;
+    if (time_since_adjust >= 0.5) {
+        float fps_ratio = shader->current_fps / shader->target_fps;
+        float new_scale = shader->target_resolution_scale;
+        
+        if (fps_ratio < 0.85f) {
+            /* FPS too low - decrease resolution aggressively */
+            new_scale = shader->resolution_scale * 0.8f;
+        } else if (fps_ratio < 0.95f) {
+            /* FPS slightly low - decrease resolution gently */
+            new_scale = shader->resolution_scale * 0.95f;
+        } else if (fps_ratio > 1.1f && shader->resolution_scale < shader->max_resolution_scale) {
+            /* FPS high with headroom - try increasing resolution slowly */
+            new_scale = shader->resolution_scale * 1.05f;
+        }
+        
+        /* Clamp to allowed range */
+        if (new_scale < shader->min_resolution_scale) {
+            new_scale = shader->min_resolution_scale;
+        }
+        if (new_scale > shader->max_resolution_scale) {
+            new_scale = shader->max_resolution_scale;
+        }
+        
+        /* Only update if change is significant (>2%) */
+        if (fabsf(new_scale - shader->target_resolution_scale) > 0.02f) {
+            shader->target_resolution_scale = new_scale;
+            log_info("Adaptive resolution: FPS=%.1f, adjusting scale %.2f -> %.2f",
+                     shader->current_fps, shader->resolution_scale, new_scale);
+        }
+        
+        shader->last_scale_adjust_time = current_time;
+    }
+    
+    /* Smoothly interpolate current scale towards target */
+    float scale_diff = shader->target_resolution_scale - shader->resolution_scale;
+    if (fabsf(scale_diff) > 0.01f) {
+        /* Move 20% towards target each frame for smooth transition */
+        shader->resolution_scale += scale_diff * 0.2f;
+        
+        /* Force resize by invalidating cached size */
+        shader->scaled_width = 0;
+        shader->scaled_height = 0;
+    } else if (fabsf(scale_diff) > 0.001f) {
+        /* Snap to target when close enough */
+        shader->resolution_scale = shader->target_resolution_scale;
+        shader->scaled_width = 0;
+        shader->scaled_height = 0;
+    }
 }
 
 void multipass_reset(multipass_shader_t *shader) {

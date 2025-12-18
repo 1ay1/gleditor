@@ -83,6 +83,34 @@ void editor_preview_reset_time(void);
 double editor_preview_get_fps(void);
 
 /**
+ * Get current resolution scale
+ * 
+ * @return Resolution scale (1.0 = full, 0.5 = half)
+ */
+float editor_preview_get_resolution_scale(void);
+
+/**
+ * Set resolution scale manually
+ * 
+ * @param scale Resolution scale (0.25 to 1.0)
+ */
+void editor_preview_set_resolution_scale(float scale);
+
+/**
+ * Enable/disable adaptive resolution scaling
+ * 
+ * @param enabled Enable adaptive scaling
+ */
+void editor_preview_set_adaptive_resolution(bool enabled);
+
+/**
+ * Check if adaptive resolution is enabled
+ * 
+ * @return true if adaptive resolution is enabled
+ */
+bool editor_preview_is_adaptive_resolution(void);
+
+/**
  * Get mouse position in normalized coordinates
  * 
  * @param x Output: X coordinate (0.0 to 1.0)

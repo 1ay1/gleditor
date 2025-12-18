@@ -821,7 +821,16 @@ static gboolean compile_shader_delayed(gpointer user_data) {
 static gboolean update_fps_timer(gpointer user_data) {
     (void)user_data;
     double fps = editor_preview_get_fps();
-    editor_statusbar_set_fps(fps);
+    float scale = editor_preview_get_resolution_scale();
+    
+    /* Show FPS and resolution scale (as percentage) */
+    char fps_text[64];
+    if (editor_preview_is_adaptive_resolution()) {
+        snprintf(fps_text, sizeof(fps_text), "FPS: %.0f | Res: %.0f%% (auto)", fps, scale * 100.0f);
+    } else {
+        snprintf(fps_text, sizeof(fps_text), "FPS: %.0f | Res: %.0f%%", fps, scale * 100.0f);
+    }
+    editor_statusbar_set_fps_text(fps_text);
     return G_SOURCE_CONTINUE;
 }
 

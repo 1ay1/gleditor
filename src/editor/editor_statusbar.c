@@ -134,6 +134,17 @@ void editor_statusbar_set_fps(double fps) {
     gtk_label_set_markup(GTK_LABEL(statusbar_state.fps_label), markup);
 }
 
+void editor_statusbar_set_fps_text(const char *text) {
+    if (!statusbar_state.fps_label || !text) {
+        return;
+    }
+
+    char markup[256];
+    snprintf(markup, sizeof(markup),
+             "<span foreground='#00FF41'>⚡ %s</span>", text);
+    gtk_label_set_markup(GTK_LABEL(statusbar_state.fps_label), markup);
+}
+
 void editor_statusbar_set_cursor_position(int line, int column) {
     if (!statusbar_state.cursor_label) {
         return;

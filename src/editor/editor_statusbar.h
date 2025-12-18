@@ -33,6 +33,13 @@ void editor_statusbar_set_message(const char *message);
 void editor_statusbar_set_fps(double fps);
 
 /**
+ * Update FPS display with custom text
+ * 
+ * @param text Custom FPS/performance text
+ */
+void editor_statusbar_set_fps_text(const char *text);
+
+/**
  * Update cursor position display
  * 
  * @param line Current line number (1-based)
