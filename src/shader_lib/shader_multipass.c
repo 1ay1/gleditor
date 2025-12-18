@@ -957,38 +957,128 @@ multipass_shader_t *multipass_create_from_parsed(const multipass_parse_result_t 
         pass->is_compiled = false;
 
         /*
-         * GENERAL SHADERTOY CHANNEL BINDING
+         * SMART CHANNEL BINDING
          *
-         * Shadertoy channel bindings are defined in JSON metadata which we don't have.
-         * We use the most common Shadertoy pattern:
-         *
-         *   iChannel0 = Self (previous frame feedback - most common for temporal effects)
-         *   iChannel1 = Buffer A (or previous buffer in chain)
-         *   iChannel2 = Buffer B
-         *   iChannel3 = Buffer C
-         *
-         * This works for the majority of Shadertoy shaders because:
-         * - Feedback/temporal effects almost always use iChannel0
-         * - Scene/input data typically comes from iChannel1
-         * - Additional buffers are on higher channels
-         *
-         * Passes are rendered in order: Buffer A -> B -> C -> D -> Image
+         * Analyze the shader source to determine what each channel is used for:
+         * 1. If channel is used with texture() at specific coordinates (like /1024.0),
+         *    it's likely a noise/data texture -> use noise texture
+         * 2. If channel is used with fragCoord/iResolution (screen-space),
+         *    it's likely reading from a buffer or self-feedback
+         * 3. Default fallback based on pass type
          */
+        
+        /* Default all channels to noise first */
+        for (int c = 0; c < MULTIPASS_MAX_CHANNELS; c++) {
+            pass->channels[c].source = CHANNEL_SOURCE_NOISE;
+        }
 
         if (pass->type == PASS_TYPE_IMAGE) {
             shader->image_pass_index = i;
-            /* Image pass reads from all buffers, no self */
+            /* Image pass: analyze source to find buffer references */
             pass->channels[0].source = CHANNEL_SOURCE_BUFFER_A;
             pass->channels[1].source = CHANNEL_SOURCE_BUFFER_B;
             pass->channels[2].source = CHANNEL_SOURCE_BUFFER_C;
             pass->channels[3].source = CHANNEL_SOURCE_BUFFER_D;
         } else {
             shader->has_buffers = true;
-            /* Buffer passes: iChannel0=self, iChannel1-3=previous buffers */
-            pass->channels[0].source = CHANNEL_SOURCE_SELF;
-            pass->channels[1].source = CHANNEL_SOURCE_BUFFER_A;
-            pass->channels[2].source = CHANNEL_SOURCE_BUFFER_B;
-            pass->channels[3].source = CHANNEL_SOURCE_BUFFER_C;
+            
+            /*
+             * Smart detection for buffer passes:
+             * Look at how each iChannel is used in the source
+             * 
+             * Common patterns:
+             * 1. texture(iChannel0, p/1024.0) - noise texture lookup
+             * 2. texture(iChannel1, uv) - self/feedback for temporal effects
+             * 3. texture(iChannel0, fragCoord/iResolution) - reading from buffer
+             */
+            const char *src = pass->source;
+            if (src) {
+                for (int c = 0; c < MULTIPASS_MAX_CHANNELS; c++) {
+                    char channel_name[16];
+                    snprintf(channel_name, sizeof(channel_name), "iChannel%d", c);
+                    
+                    /* Check ALL usages of this channel, not just the first */
+                    const char *usage = src;
+                    bool looks_like_noise_sample = false;
+                    bool looks_like_buffer_read = false;
+                    
+                    while ((usage = strstr(usage, channel_name)) != NULL) {
+                        /*
+                         * Heuristic: Check what comes after texture(iChannelN, ...)
+                         * - If we see patterns like "/1024" or "/256" nearby,
+                         *   it's sampling a noise/data texture at specific coordinates
+                         * - If we see "fragCoord" or "uv" nearby,
+                         *   it's reading from a buffer (screen-space)
+                         */
+                        
+                        /* Search within 80 chars after the channel reference */
+                        const char *search_end = usage + 80;
+                        const char *p = usage;
+                        while (p < search_end && *p && *p != ';' && *p != '\n') {
+                            /* Noise texture patterns: division by power of 2 */
+                            if (strncmp(p, "/1024", 5) == 0 ||
+                                strncmp(p, "/ 1024", 6) == 0 ||
+                                strncmp(p, "/512", 4) == 0 ||
+                                strncmp(p, "/256", 4) == 0 ||
+                                strncmp(p, "/128", 4) == 0 ||
+                                strncmp(p, "*0.00", 5) == 0 ||
+                                strncmp(p, "* 0.00", 6) == 0) {
+                                looks_like_noise_sample = true;
+                                break;
+                            }
+                            /* Buffer read patterns: screen-space coordinates */
+                            if (strncmp(p, "fragCoord", 9) == 0 ||
+                                strncmp(p, "iResolution", 11) == 0 ||
+                                /* Common UV variable patterns */
+                                (p[0] == 'u' && p[1] == 'v' && 
+                                 (p[2] == ')' || p[2] == '.' || p[2] == ',' || p[2] == ' '))) {
+                                looks_like_buffer_read = true;
+                                break;
+                            }
+                            p++;
+                        }
+                        
+                        usage++; /* Move past current match to find next */
+                    }
+                    
+                    if (looks_like_noise_sample && !looks_like_buffer_read) {
+                        /* This channel only samples a noise texture */
+                        pass->channels[c].source = CHANNEL_SOURCE_NOISE;
+                        log_info("  %s iChannel%d: noise texture", pass->name, c);
+                    } else if (looks_like_buffer_read) {
+                        /* This channel reads in screen-space - buffer or self-feedback */
+                        if (pass->type == PASS_TYPE_BUFFER_A) {
+                            /* Buffer A: screen-space read = self-feedback (temporal) */
+                            pass->channels[c].source = CHANNEL_SOURCE_SELF;
+                            log_info("  %s iChannel%d: self-feedback", pass->name, c);
+                        } else {
+                            /* Other buffers: channel 0 = Buffer A, else self or previous */
+                            if (c == 0) {
+                                pass->channels[c].source = CHANNEL_SOURCE_BUFFER_A;
+                                log_info("  %s iChannel%d: Buffer A", pass->name, c);
+                            } else {
+                                pass->channels[c].source = CHANNEL_SOURCE_SELF;
+                                log_info("  %s iChannel%d: self-feedback", pass->name, c);
+                            }
+                        }
+                    } else {
+                        /* Channel not used or can't determine - use safe defaults */
+                        const char *check = strstr(src, channel_name);
+                        if (!check) {
+                            /* Not used at all - noise is fine */
+                            pass->channels[c].source = CHANNEL_SOURCE_NOISE;
+                        } else {
+                            /* Used but can't determine pattern - default based on channel */
+                            if (c == 0) {
+                                pass->channels[c].source = CHANNEL_SOURCE_NOISE;
+                            } else {
+                                /* Higher channels often used for feedback */
+                                pass->channels[c].source = CHANNEL_SOURCE_SELF;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         const char* src_names[] = {"None", "BufA", "BufB", "BufC", "BufD", "Tex", "Kbd", "Noise", "Self"};
@@ -1037,20 +1127,37 @@ bool multipass_init_gl(multipass_shader_t *shader, int width, int height) {
     glBindBuffer(GL_ARRAY_BUFFER, shader->vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    /* Generate noise texture */
+    /* Generate high-quality noise texture (1024x1024 for Shadertoy compatibility)
+     * Many shaders expect texture(iChannel0, p/1024.0) to sample noise */
     glGenTextures(1, &shader->noise_texture);
     glBindTexture(GL_TEXTURE_2D, shader->noise_texture);
 
-    unsigned char *noise_data = malloc(256 * 256 * 4);
+    #define NOISE_SIZE 1024
+    unsigned char *noise_data = malloc(NOISE_SIZE * NOISE_SIZE * 4);
     if (noise_data) {
-        for (int i = 0; i < 256 * 256 * 4; i++) {
-            noise_data[i] = rand() % 256;
+        /* Use a simple but decent PRNG for reproducible noise */
+        unsigned int seed = 12345;
+        for (int y = 0; y < NOISE_SIZE; y++) {
+            for (int x = 0; x < NOISE_SIZE; x++) {
+                int idx = (y * NOISE_SIZE + x) * 4;
+                /* LCG-based pseudo-random with mixing for each channel */
+                seed = seed * 1664525u + 1013904223u;
+                noise_data[idx + 0] = (seed >> 24) & 0xFF;
+                seed = seed * 1664525u + 1013904223u;
+                noise_data[idx + 1] = (seed >> 24) & 0xFF;
+                seed = seed * 1664525u + 1013904223u;
+                noise_data[idx + 2] = (seed >> 24) & 0xFF;
+                seed = seed * 1664525u + 1013904223u;
+                noise_data[idx + 3] = (seed >> 24) & 0xFF;
+            }
         }
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, noise_data);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, NOISE_SIZE, NOISE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, noise_data);
         free(noise_data);
     }
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    #undef NOISE_SIZE
+    /* Use NEAREST for crisp noise values, LINEAR can cause blurring */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
