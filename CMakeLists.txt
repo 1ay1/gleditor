@@ -113,10 +113,6 @@ set(EDITOR_SOURCES
 )
 
 set(SHADER_LIB_SOURCES
-    src/shader_lib/neowall_shader_api.c
-    src/shader_lib/shader_core.c
-    src/shader_lib/shadertoy_compat.c
-    src/shader_lib/shader_adaptation.c
     src/shader_lib/shader_multipass.c
 )
 
