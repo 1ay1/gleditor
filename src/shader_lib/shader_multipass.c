@@ -935,12 +935,15 @@ multipass_shader_t *multipass_create_from_parsed(const multipass_parse_result_t 
     
     /* Adaptive resolution defaults */
     shader->adaptive_resolution = true;  /* Enable by default */
-    shader->target_fps = 55.0f;          /* Target slightly below 60 for headroom */
+    shader->target_fps = 60.0f;          /* Target 60 FPS exactly */
     shader->current_fps = 60.0f;
     shader->fps_history_index = 0;
     shader->last_fps_update_time = 0.0;
     shader->frames_since_fps_update = 0;
     shader->last_scale_adjust_time = 0.0;
+    shader->initial_calibration_done = false;
+    shader->calibration_frames = 0;
+    shader->calibration_start_time = 0.0;
     for (int i = 0; i < 8; i++) {
         shader->fps_history[i] = 60.0f;
     }
@@ -1754,6 +1757,65 @@ void multipass_update_adaptive_resolution(multipass_shader_t *shader, double cur
     if (shader->last_fps_update_time == 0.0) {
         shader->last_fps_update_time = current_time;
         shader->last_scale_adjust_time = current_time;
+        shader->calibration_start_time = current_time;
+        shader->calibration_frames = 0;
+        shader->initial_calibration_done = false;
+        return;
+    }
+    
+    /*
+     * FAST INITIAL CALIBRATION
+     * For the first 0.5 seconds, measure FPS at 100% scale to estimate
+     * the optimal starting scale. This avoids slowly ramping down.
+     */
+    if (!shader->initial_calibration_done) {
+        shader->calibration_frames++;
+        double calibration_elapsed = current_time - shader->calibration_start_time;
+        
+        if (calibration_elapsed >= 0.4 && shader->calibration_frames > 5) {
+            float measured_fps = (float)shader->calibration_frames / (float)calibration_elapsed;
+            
+            /*
+             * Estimate optimal scale based on measured FPS
+             * If we're getting 30 FPS at 100% scale, we need roughly 50% scale for 60 FPS
+             * Scale factor relates to pixel count, so: new_scale = sqrt(measured/target) * current
+             * But be conservative - use a slightly lower estimate
+             */
+            if (measured_fps < shader->target_fps * 0.9f) {
+                float fps_ratio = measured_fps / shader->target_fps;
+                /* Use sqrt because resolution scales with pixel count (width*height) */
+                float estimated_scale = sqrtf(fps_ratio) * shader->resolution_scale * 0.95f;
+                
+                /* Clamp to valid range */
+                if (estimated_scale < shader->min_resolution_scale) {
+                    estimated_scale = shader->min_resolution_scale;
+                }
+                if (estimated_scale > shader->max_resolution_scale) {
+                    estimated_scale = shader->max_resolution_scale;
+                }
+                
+                shader->target_resolution_scale = estimated_scale;
+                shader->resolution_scale = estimated_scale;
+                shader->scaled_width = 0;  /* Force resize */
+                shader->scaled_height = 0;
+                
+                log_info("Initial calibration: %.1f FPS at 100%% -> estimated optimal scale %.0f%%",
+                         measured_fps, estimated_scale * 100.0f);
+            } else {
+                log_info("Initial calibration: %.1f FPS at 100%% -> keeping full resolution",
+                         measured_fps);
+            }
+            
+            /* Fill FPS history with measured value for smooth start */
+            for (int i = 0; i < 8; i++) {
+                shader->fps_history[i] = measured_fps;
+            }
+            shader->current_fps = measured_fps;
+            
+            shader->initial_calibration_done = true;
+            shader->last_fps_update_time = current_time;
+            shader->last_scale_adjust_time = current_time;
+        }
         return;
     }
     
@@ -1777,21 +1839,57 @@ void multipass_update_adaptive_resolution(multipass_shader_t *shader, double cur
         shader->last_fps_update_time = current_time;
     }
     
-    /* Adjust resolution scale every 0.5 seconds based on FPS */
+    /* 
+     * Smart PID-like adaptive resolution control
+     * Goal: Find the HIGHEST resolution that maintains 60 FPS
+     * 
+     * Algorithm:
+     * - Calculate FPS error (how far from target)
+     * - Use proportional control with different gains for up/down
+     * - Be conservative going down, aggressive going up
+     * - Small deadband around target to avoid oscillation
+     */
     double time_since_adjust = current_time - shader->last_scale_adjust_time;
-    if (time_since_adjust >= 0.5) {
-        float fps_ratio = shader->current_fps / shader->target_fps;
-        float new_scale = shader->target_resolution_scale;
+    
+    /* Adjust every 0.3 seconds for responsive but stable control */
+    if (time_since_adjust >= 0.3) {
+        float fps_error = shader->current_fps - shader->target_fps;
+        float current_scale = shader->resolution_scale;
+        float new_scale = current_scale;
         
-        if (fps_ratio < 0.85f) {
-            /* FPS too low - decrease resolution aggressively */
-            new_scale = shader->resolution_scale * 0.8f;
-        } else if (fps_ratio < 0.95f) {
-            /* FPS slightly low - decrease resolution gently */
-            new_scale = shader->resolution_scale * 0.95f;
-        } else if (fps_ratio > 1.1f && shader->resolution_scale < shader->max_resolution_scale) {
-            /* FPS high with headroom - try increasing resolution slowly */
-            new_scale = shader->resolution_scale * 1.05f;
+        /* Deadband: if within ±3 FPS of target, don't adjust */
+        if (fps_error < -3.0f) {
+            /* FPS too low - need to reduce resolution */
+            /* Scale adjustment proportional to how far below target */
+            /* Use sqrt to be less aggressive for small errors */
+            float error_magnitude = -fps_error / shader->target_fps;
+            float adjustment = sqrtf(error_magnitude) * 0.15f;
+            
+            /* Limit maximum single adjustment to 10% */
+            if (adjustment > 0.10f) adjustment = 0.10f;
+            
+            new_scale = current_scale * (1.0f - adjustment);
+            
+        } else if (fps_error > 2.0f && current_scale < shader->max_resolution_scale) {
+            /* FPS above target - can try increasing resolution */
+            /* 
+             * Smart upscaling: estimate how much we can increase
+             * If at 50% scale getting 90 FPS (target 60), we have 50% headroom
+             * Since pixels scale quadratically: new_scale = current * sqrt(current_fps/target)
+             * But be conservative to avoid oscillation
+             */
+            float fps_ratio = shader->current_fps / shader->target_fps;
+            float theoretical_max_scale = current_scale * sqrtf(fps_ratio);
+            
+            /* Move 20% of the way towards theoretical max, capped at 8% increase */
+            float target_scale = current_scale + (theoretical_max_scale - current_scale) * 0.2f;
+            float adjustment = (target_scale / current_scale) - 1.0f;
+            
+            /* Cap at 8% increase per step, minimum 1% if we have headroom */
+            if (adjustment > 0.08f) adjustment = 0.08f;
+            if (adjustment < 0.01f && fps_error > 5.0f) adjustment = 0.01f;
+            
+            new_scale = current_scale * (1.0f + adjustment);
         }
         
         /* Clamp to allowed range */
@@ -1802,11 +1900,12 @@ void multipass_update_adaptive_resolution(multipass_shader_t *shader, double cur
             new_scale = shader->max_resolution_scale;
         }
         
-        /* Only update if change is significant (>2%) */
-        if (fabsf(new_scale - shader->target_resolution_scale) > 0.02f) {
+        /* Only update if change is meaningful (>0.5%) */
+        if (fabsf(new_scale - shader->target_resolution_scale) > 0.005f) {
             shader->target_resolution_scale = new_scale;
-            log_info("Adaptive resolution: FPS=%.1f, adjusting scale %.2f -> %.2f",
-                     shader->current_fps, shader->resolution_scale, new_scale);
+            log_info("Adaptive: FPS=%.1f (target=%.0f), scale %.0f%% -> %.0f%%",
+                     shader->current_fps, shader->target_fps,
+                     current_scale * 100.0f, new_scale * 100.0f);
         }
         
         shader->last_scale_adjust_time = current_time;
@@ -1814,9 +1913,9 @@ void multipass_update_adaptive_resolution(multipass_shader_t *shader, double cur
     
     /* Smoothly interpolate current scale towards target */
     float scale_diff = shader->target_resolution_scale - shader->resolution_scale;
-    if (fabsf(scale_diff) > 0.01f) {
-        /* Move 20% towards target each frame for smooth transition */
-        shader->resolution_scale += scale_diff * 0.2f;
+    if (fabsf(scale_diff) > 0.005f) {
+        /* Move 30% towards target each frame for responsive transition */
+        shader->resolution_scale += scale_diff * 0.3f;
         
         /* Force resize by invalidating cached size */
         shader->scaled_width = 0;

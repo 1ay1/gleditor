@@ -124,6 +124,11 @@ typedef struct {
     int frames_since_fps_update;             /* Frame counter for FPS calculation */
     double last_scale_adjust_time;           /* Time of last scale adjustment */
     
+    /* Initial calibration */
+    bool initial_calibration_done;           /* True after initial FPS measurement */
+    int calibration_frames;                  /* Frames counted during calibration */
+    double calibration_start_time;           /* Start time of calibration period */
+    
     bool is_initialized;                     /* OpenGL resources initialized */
 } multipass_shader_t;
 
