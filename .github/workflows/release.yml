@@ -1,0 +1,451 @@
+# GitHub Actions Release Workflow for gleditor
+# Builds and releases for Windows, macOS, and Linux
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # ============================================================================
+  # Linux Build
+  # ============================================================================
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            cmake \
+            libgtk-3-dev \
+            libgtksourceview-4-dev \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev
+
+      - name: Build with CMake
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
+          cmake --build . --config ${{ env.BUILD_TYPE }} -j$(nproc)
+
+      - name: Create Linux package
+        run: |
+          # Get version from tag or input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          
+          # Create package directory
+          PACKAGE_NAME="gleditor-${VERSION}-linux-x86_64"
+          mkdir -p ${PACKAGE_NAME}/bin
+          mkdir -p ${PACKAGE_NAME}/share/gleditor
+          mkdir -p ${PACKAGE_NAME}/share/applications
+          mkdir -p ${PACKAGE_NAME}/share/icons/hicolor/scalable/apps
+          
+          # Copy binary
+          cp build/gleditor ${PACKAGE_NAME}/bin/
+          
+          # Copy data files
+          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
+          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
+          if [ -f "data/gleditor.desktop" ]; then
+            cp data/gleditor.desktop ${PACKAGE_NAME}/share/applications/
+          fi
+          cp data/icon.svg ${PACKAGE_NAME}/share/icons/hicolor/scalable/apps/gleditor.svg
+          
+          # Copy documentation
+          cp README.md ${PACKAGE_NAME}/
+          cp INSTALL.md ${PACKAGE_NAME}/
+          if [ -f "LICENSE" ]; then
+            cp LICENSE ${PACKAGE_NAME}/
+          fi
+          
+          # Create install script
+          cat > ${PACKAGE_NAME}/install.sh << 'EOF'
+#!/bin/bash
+# gleditor Installation Script
+set -e
+
+PREFIX="${1:-/usr/local}"
+echo "Installing gleditor to ${PREFIX}..."
+
+# Install binary
+sudo install -Dm755 bin/gleditor "${PREFIX}/bin/gleditor"
+
+# Install data files
+sudo install -Dm644 share/gleditor/gleditor.svg "${PREFIX}/share/gleditor/gleditor.svg"
+sudo install -Dm644 share/gleditor/icon.svg "${PREFIX}/share/gleditor/icon.svg"
+
+# Install desktop entry and icon (Linux only)
+if [ -f "share/applications/gleditor.desktop" ]; then
+    sudo install -Dm644 share/applications/gleditor.desktop "${PREFIX}/share/applications/gleditor.desktop"
+fi
+sudo install -Dm644 share/icons/hicolor/scalable/apps/gleditor.svg "${PREFIX}/share/icons/hicolor/scalable/apps/gleditor.svg"
+
+echo "Installation complete!"
+echo "Run 'gleditor' to start the application."
+EOF
+          chmod +x ${PACKAGE_NAME}/install.sh
+          
+          # Create tarball
+          tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
+          
+          # Store version for later
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gleditor-linux-x86_64
+          path: gleditor-*-linux-x86_64.tar.gz
+
+  # ============================================================================
+  # macOS Build (Intel)
+  # ============================================================================
+  build-macos-intel:
+    runs-on: macos-13  # Intel runner
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install gtk+3 gtksourceview4 pkg-config cmake
+
+      - name: Build with CMake
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
+          cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
+
+      - name: Create macOS package
+        run: |
+          # Get version from tag or input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          
+          # Create package directory
+          PACKAGE_NAME="gleditor-${VERSION}-macos-intel"
+          mkdir -p ${PACKAGE_NAME}
+          
+          # Copy binary
+          if [ -d "build/gleditor.app" ]; then
+            cp -R build/gleditor.app ${PACKAGE_NAME}/
+          else
+            mkdir -p ${PACKAGE_NAME}/bin
+            cp build/gleditor ${PACKAGE_NAME}/bin/
+          fi
+          
+          # Copy data files
+          mkdir -p ${PACKAGE_NAME}/share/gleditor
+          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
+          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
+          
+          # Copy documentation
+          cp README.md ${PACKAGE_NAME}/
+          cp INSTALL.md ${PACKAGE_NAME}/
+          if [ -f "LICENSE" ]; then
+            cp LICENSE ${PACKAGE_NAME}/
+          fi
+          
+          # Create zip
+          zip -r ${PACKAGE_NAME}.zip ${PACKAGE_NAME}
+          
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
+      - name: Upload macOS Intel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gleditor-macos-intel
+          path: gleditor-*-macos-intel.zip
+
+  # ============================================================================
+  # macOS Build (Apple Silicon)
+  # ============================================================================
+  build-macos-arm:
+    runs-on: macos-14  # Apple Silicon runner
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install gtk+3 gtksourceview4 pkg-config cmake
+
+      - name: Build with CMake
+        run: |
+          mkdir build && cd build
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
+          cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
+
+      - name: Create macOS package
+        run: |
+          # Get version from tag or input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          
+          # Create package directory
+          PACKAGE_NAME="gleditor-${VERSION}-macos-arm64"
+          mkdir -p ${PACKAGE_NAME}
+          
+          # Copy binary
+          if [ -d "build/gleditor.app" ]; then
+            cp -R build/gleditor.app ${PACKAGE_NAME}/
+          else
+            mkdir -p ${PACKAGE_NAME}/bin
+            cp build/gleditor ${PACKAGE_NAME}/bin/
+          fi
+          
+          # Copy data files
+          mkdir -p ${PACKAGE_NAME}/share/gleditor
+          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
+          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
+          
+          # Copy documentation
+          cp README.md ${PACKAGE_NAME}/
+          cp INSTALL.md ${PACKAGE_NAME}/
+          if [ -f "LICENSE" ]; then
+            cp LICENSE ${PACKAGE_NAME}/
+          fi
+          
+          # Create zip
+          zip -r ${PACKAGE_NAME}.zip ${PACKAGE_NAME}
+          
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
+      - name: Upload macOS ARM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gleditor-macos-arm64
+          path: gleditor-*-macos-arm64.zip
+
+  # ============================================================================
+  # Windows Build
+  # ============================================================================
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-gtk3
+            mingw-w64-x86_64-gtksourceview4
+            mingw-w64-x86_64-libepoxy
+            mingw-w64-x86_64-ntldd
+
+      - name: Build with CMake
+        run: |
+          mkdir build && cd build
+          cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
+          cmake --build . --config ${{ env.BUILD_TYPE }} -j$(nproc)
+
+      - name: Create Windows package
+        run: |
+          # Get version from tag or input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          
+          # Create package directory
+          PACKAGE_NAME="gleditor-${VERSION}-windows-x86_64"
+          mkdir -p ${PACKAGE_NAME}
+          
+          # Copy binary
+          cp build/gleditor.exe ${PACKAGE_NAME}/
+          
+          # Copy required DLLs using ntldd
+          echo "Copying required DLLs..."
+          
+          # Get list of DLLs and copy them
+          ntldd -R build/gleditor.exe | grep "mingw64" | awk '{print $3}' | while read dll; do
+            if [ -f "$dll" ]; then
+              cp "$dll" ${PACKAGE_NAME}/
+            fi
+          done
+          
+          # Copy GDK pixbuf loaders (required for GTK)
+          PIXBUF_DIR="/mingw64/lib/gdk-pixbuf-2.0"
+          if [ -d "$PIXBUF_DIR" ]; then
+            cp -r $PIXBUF_DIR ${PACKAGE_NAME}/
+          fi
+          
+          # Copy GTK settings and schemas
+          mkdir -p ${PACKAGE_NAME}/share/glib-2.0/schemas
+          cp /mingw64/share/glib-2.0/schemas/gschemas.compiled ${PACKAGE_NAME}/share/glib-2.0/schemas/ 2>/dev/null || true
+          
+          # Copy GTK icons (subset for file dialogs, etc.)
+          mkdir -p ${PACKAGE_NAME}/share/icons
+          cp -r /mingw64/share/icons/Adwaita ${PACKAGE_NAME}/share/icons/ 2>/dev/null || true
+          cp -r /mingw64/share/icons/hicolor ${PACKAGE_NAME}/share/icons/ 2>/dev/null || true
+          
+          # Copy GTK theme
+          mkdir -p ${PACKAGE_NAME}/share/themes
+          cp -r /mingw64/share/themes/Default ${PACKAGE_NAME}/share/themes/ 2>/dev/null || true
+          
+          # Copy GtkSourceView language specs
+          mkdir -p ${PACKAGE_NAME}/share/gtksourceview-4
+          cp -r /mingw64/share/gtksourceview-4/* ${PACKAGE_NAME}/share/gtksourceview-4/ 2>/dev/null || true
+          
+          # Copy gleditor data files
+          mkdir -p ${PACKAGE_NAME}/share/gleditor
+          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
+          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
+          
+          # Copy documentation
+          cp README.md ${PACKAGE_NAME}/
+          cp INSTALL.md ${PACKAGE_NAME}/
+          if [ -f "LICENSE" ]; then
+            cp LICENSE ${PACKAGE_NAME}/
+          fi
+          
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "PACKAGE_NAME=${PACKAGE_NAME}" >> $GITHUB_ENV
+
+      - name: Create Windows ZIP
+        shell: pwsh
+        run: |
+          # Get version
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $VERSION = "${{ github.event.inputs.version }}"
+          } else {
+            $VERSION = "${{ github.ref_name }}".TrimStart('v')
+          }
+          
+          $PACKAGE_NAME = "gleditor-${VERSION}-windows-x86_64"
+          Compress-Archive -Path "${PACKAGE_NAME}/*" -DestinationPath "${PACKAGE_NAME}.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gleditor-windows-x86_64
+          path: gleditor-*-windows-x86_64.zip
+
+  # ============================================================================
+  # Create Release
+  # ============================================================================
+  create-release:
+    needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts/
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          name: gleditor v${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.VERSION, 'alpha') || contains(steps.get_version.outputs.VERSION, 'beta') || contains(steps.get_version.outputs.VERSION, 'rc') }}
+          generate_release_notes: true
+          body: |
+            ## 🎨 gleditor v${{ steps.get_version.outputs.VERSION }}
+            
+            The Shader Editor That Actually Works™ - A standalone OpenGL ES shader editor with real-time preview and syntax highlighting.
+            
+            ### 📦 Downloads
+            
+            | Platform | Architecture | File |
+            |----------|--------------|------|
+            | 🐧 Linux | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz` |
+            | 🍎 macOS | Intel | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-intel.zip` |
+            | 🍎 macOS | Apple Silicon | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64.zip` |
+            | 🪟 Windows | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-windows-x86_64.zip` |
+            
+            ### 🚀 Quick Start
+            
+            **Linux:**
+            ```bash
+            tar -xzf gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz
+            cd gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64
+            ./install.sh  # or just run ./bin/gleditor
+            ```
+            
+            **macOS:**
+            ```bash
+            unzip gleditor-${{ steps.get_version.outputs.VERSION }}-macos-*.zip
+            # Run the binary or move to /Applications
+            ```
+            
+            **Windows:**
+            - Extract the ZIP file
+            - Run `gleditor.exe`
+            
+            ### 📋 Requirements
+            
+            - **Linux:** GTK+3 (>= 3.20), GTKSourceView 4, OpenGL ES 2.0+
+            - **macOS:** No additional dependencies (included in package)
+            - **Windows:** No additional dependencies (DLLs included)
+            
+            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for detailed instructions.
+          files: |
+            artifacts/gleditor-linux-x86_64/*.tar.gz
+            artifacts/gleditor-macos-intel/*.zip
+            artifacts/gleditor-macos-arm64/*.zip
+            artifacts/gleditor-windows-x86_64/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
