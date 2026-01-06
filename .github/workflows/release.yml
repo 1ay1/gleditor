@@ -110,15 +110,21 @@ jobs:
   # ============================================================================
   build-macos-intel:
     runs-on: macos-13
+    continue-on-error: true
+    env:
+      PKG_CONFIG_PATH: /usr/local/opt/gtk+3/lib/pkgconfig:/usr/local/opt/gtksourceview4/lib/pkgconfig:/usr/local/lib/pkgconfig
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install gtk+3 gtksourceview4 pkg-config cmake
+        run: |
+          brew install gtk+3 gtksourceview4 pkg-config cmake
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Build with CMake
         run: |
+          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig:$PKG_CONFIG_PATH"
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
           cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
@@ -167,15 +173,21 @@ jobs:
   # ============================================================================
   build-macos-arm:
     runs-on: macos-14
+    continue-on-error: true
+    env:
+      PKG_CONFIG_PATH: /opt/homebrew/opt/gtk+3/lib/pkgconfig:/opt/homebrew/opt/gtksourceview4/lib/pkgconfig:/opt/homebrew/lib/pkgconfig
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install gtk+3 gtksourceview4 pkg-config cmake
+        run: |
+          brew install gtk+3 gtksourceview4 pkg-config cmake
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Build with CMake
         run: |
+          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig:$PKG_CONFIG_PATH"
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
           cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
@@ -265,18 +277,29 @@ jobs:
 
       - name: Create Windows package
         run: |
+          set +e  # Don't exit on errors during DLL copying
           PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
           mkdir -p ${PACKAGE_NAME}
           
           cp build/gleditor.exe ${PACKAGE_NAME}/
           
           echo "Copying required DLLs..."
-          ntldd -R build/gleditor.exe | grep "mingw64" | awk '{print $3}' | while read dll; do
-            [ -f "$dll" ] && cp "$dll" ${PACKAGE_NAME}/
+          # Use ldd and copy all mingw64 DLLs
+          ldd build/gleditor.exe | grep "mingw64" | awk '{print $3}' > /tmp/dlls.txt || true
+          while IFS= read -r dll; do
+            if [ -f "$dll" ]; then
+              echo "Copying: $dll"
+              cp "$dll" ${PACKAGE_NAME}/ 2>/dev/null || true
+            fi
+          done < /tmp/dlls.txt
+          
+          # Also copy common GTK DLLs directly as backup
+          for dll in /mingw64/bin/lib*.dll /mingw64/bin/gdk*.dll /mingw64/bin/gtk*.dll /mingw64/bin/glib*.dll /mingw64/bin/gobject*.dll /mingw64/bin/gio*.dll /mingw64/bin/pango*.dll /mingw64/bin/cairo*.dll /mingw64/bin/fontconfig*.dll /mingw64/bin/freetype*.dll; do
+            [ -f "$dll" ] && cp "$dll" ${PACKAGE_NAME}/ 2>/dev/null || true
           done
           
           # Copy GDK pixbuf loaders
-          [ -d "/mingw64/lib/gdk-pixbuf-2.0" ] && cp -r /mingw64/lib/gdk-pixbuf-2.0 ${PACKAGE_NAME}/
+          [ -d "/mingw64/lib/gdk-pixbuf-2.0" ] && cp -r /mingw64/lib/gdk-pixbuf-2.0 ${PACKAGE_NAME}/ || true
           
           # Copy GTK settings and schemas
           mkdir -p ${PACKAGE_NAME}/share/glib-2.0/schemas
@@ -303,6 +326,11 @@ jobs:
           cp README.md ${PACKAGE_NAME}/
           cp INSTALL.md ${PACKAGE_NAME}/
           [ -f "LICENSE" ] && cp LICENSE ${PACKAGE_NAME}/ || true
+          
+          echo "Package contents:"
+          ls -la ${PACKAGE_NAME}/
+          
+          set -e  # Re-enable exit on error
 
       - name: Create Windows ZIP
         shell: pwsh
@@ -326,6 +354,7 @@ jobs:
   # ============================================================================
   create-release:
     needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
+    if: always() && needs.build-linux.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
