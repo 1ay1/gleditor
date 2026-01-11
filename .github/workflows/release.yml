@@ -106,12 +106,12 @@ jobs:
           path: gleditor-*-linux-x86_64.tar.gz
 
   # ============================================================================
-  # macOS Build (Intel)
+  # macOS Build (macos-15)
   # ============================================================================
-  build-macos-intel:
-    runs-on: macos-13
+  build-macos-15:
+    runs-on: macos-15
     env:
-      PKG_CONFIG_PATH: /usr/local/opt/gtk+3/lib/pkgconfig:/usr/local/opt/gtksourceview4/lib/pkgconfig:/usr/local/lib/pkgconfig
+      PKG_CONFIG_PATH: /opt/homebrew/opt/gtk+3/lib/pkgconfig:/opt/homebrew/opt/gtksourceview4/lib/pkgconfig:/opt/homebrew/lib/pkgconfig
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -137,7 +137,7 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PACKAGE_NAME=gleditor-${VERSION}-macos-intel" >> $GITHUB_OUTPUT
+          echo "PACKAGE_NAME=gleditor-${VERSION}-macos-arm64-m15" >> $GITHUB_OUTPUT
 
       - name: Create macOS package
         run: |
@@ -161,11 +161,11 @@ jobs:
           
           zip -r ${PACKAGE_NAME}.zip ${PACKAGE_NAME}
 
-      - name: Upload macOS Intel artifact
+      - name: Upload macOS 15 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gleditor-macos-intel
-          path: gleditor-*-macos-intel.zip
+          name: gleditor-macos-arm64-m15
+          path: gleditor-*-macos-arm64-m15.zip
 
   # ============================================================================
   # macOS Build (Apple Silicon)
@@ -351,11 +351,11 @@ jobs:
   # Create Release
   # ============================================================================
   create-release:
-    needs: [build-linux, build-macos-intel, build-macos-arm, build-windows]
+    needs: [build-linux, build-macos-15, build-macos-arm, build-windows]
     if: |
       always() && 
       needs.build-linux.result == 'success' &&
-      (needs.build-macos-intel.result == 'success' || needs.build-macos-arm.result == 'success')
+      (needs.build-macos-15.result == 'success' || needs.build-macos-arm.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -400,8 +400,8 @@ jobs:
             | Platform | Architecture | File |
             |----------|--------------|------|
             | Linux | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz` |
-            | macOS | Intel | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-intel.zip` |
-            | macOS | Apple Silicon | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64.zip` |
+            | macOS | Apple Silicon (M15) | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64-m15.zip` |
+            | macOS | Apple Silicon (M14) | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64.zip` |
             | Windows | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-windows-x86_64.zip` |
             
             ### Quick Start
@@ -413,7 +413,7 @@ jobs:
             See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for detailed instructions.
           files: |
             artifacts/gleditor-linux-x86_64/*.tar.gz
-            artifacts/gleditor-macos-intel/*.zip
+            artifacts/gleditor-macos-arm64-m15/*.zip
             artifacts/gleditor-macos-arm64/*.zip
             artifacts/gleditor-windows-x86_64/*.zip
         env:
