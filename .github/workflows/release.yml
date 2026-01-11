@@ -1,5 +1,5 @@
 # GitHub Actions Release Workflow for gleditor
-# Builds and releases for Windows, macOS, and Linux
+# Builds standalone releases for Windows, macOS, and Linux (no dependencies required)
 
 name: Release
 
@@ -19,7 +19,7 @@ env:
 
 jobs:
   # ============================================================================
-  # Linux Build
+  # Linux Build - AppImage (Standalone)
   # ============================================================================
   build-linux:
     runs-on: ubuntu-22.04
@@ -37,12 +37,16 @@ jobs:
             libgtk-3-dev \
             libgtksourceview-4-dev \
             libegl1-mesa-dev \
-            libgles2-mesa-dev
+            libgles2-mesa-dev \
+            libfuse2 \
+            file
 
       - name: Build with CMake
         run: |
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
+          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+                -DCMAKE_INSTALL_PREFIX=/usr \
+                ..
           cmake --build . --config ${{ env.BUILD_TYPE }} -j$(nproc)
 
       - name: Get version
@@ -54,123 +58,125 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PACKAGE_NAME=gleditor-${VERSION}-linux-x86_64" >> $GITHUB_OUTPUT
 
-      - name: Create Linux package
+      - name: Create AppDir structure
         run: |
-          PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/lib
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          mkdir -p AppDir/usr/share/gleditor
+          mkdir -p AppDir/usr/share/gtksourceview-4
           
-          mkdir -p ${PACKAGE_NAME}/bin
-          mkdir -p ${PACKAGE_NAME}/share/gleditor
-          mkdir -p ${PACKAGE_NAME}/share/applications
-          mkdir -p ${PACKAGE_NAME}/share/icons/hicolor/scalable/apps
+          # Copy binary
+          cp build/gleditor AppDir/usr/bin/
           
-          cp build/gleditor ${PACKAGE_NAME}/bin/
-          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
-          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
-          if [ -f "data/gleditor.desktop" ]; then
-            cp data/gleditor.desktop ${PACKAGE_NAME}/share/applications/
-          fi
-          cp data/icon.svg ${PACKAGE_NAME}/share/icons/hicolor/scalable/apps/gleditor.svg
+          # Copy data files
+          cp data/gleditor.svg AppDir/usr/share/gleditor/
+          cp data/icon.svg AppDir/usr/share/gleditor/
           
-          cp README.md ${PACKAGE_NAME}/
-          cp INSTALL.md ${PACKAGE_NAME}/
-          [ -f "LICENSE" ] && cp LICENSE ${PACKAGE_NAME}/ || true
-
-      - name: Create install script
-        run: |
-          PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
-          cat > ${PACKAGE_NAME}/install.sh << 'ENDOFSCRIPT'
+          # Copy GTKSourceView language specs for GLSL highlighting
+          cp -r /usr/share/gtksourceview-4/language-specs AppDir/usr/share/gtksourceview-4/ || true
+          cp -r /usr/share/gtksourceview-4/styles AppDir/usr/share/gtksourceview-4/ || true
+          
+          # Create desktop file
+          cat > AppDir/usr/share/applications/gleditor.desktop << 'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=gleditor
+          Comment=OpenGL ES Shader Editor
+          Exec=gleditor
+          Icon=gleditor
+          Categories=Development;Graphics;
+          Terminal=false
+          EOF
+          
+          # Convert SVG to PNG for AppImage icon
+          sudo apt-get install -y librsvg2-bin
+          rsvg-convert -w 256 -h 256 data/icon.svg -o AppDir/usr/share/icons/hicolor/256x256/apps/gleditor.png
+          cp AppDir/usr/share/icons/hicolor/256x256/apps/gleditor.png AppDir/gleditor.png
+          cp AppDir/usr/share/applications/gleditor.desktop AppDir/gleditor.desktop
+          
+          # Create AppRun script
+          cat > AppDir/AppRun << 'EOF'
           #!/bin/bash
-          set -e
-          PREFIX="${1:-/usr/local}"
-          echo "Installing gleditor to ${PREFIX}..."
-          sudo install -Dm755 bin/gleditor "${PREFIX}/bin/gleditor"
-          sudo install -Dm644 share/gleditor/gleditor.svg "${PREFIX}/share/gleditor/gleditor.svg"
-          sudo install -Dm644 share/gleditor/icon.svg "${PREFIX}/share/gleditor/icon.svg"
-          [ -f "share/applications/gleditor.desktop" ] && sudo install -Dm644 share/applications/gleditor.desktop "${PREFIX}/share/applications/gleditor.desktop"
-          sudo install -Dm644 share/icons/hicolor/scalable/apps/gleditor.svg "${PREFIX}/share/icons/hicolor/scalable/apps/gleditor.svg"
-          echo "Installation complete! Run 'gleditor' to start."
-          ENDOFSCRIPT
-          chmod +x ${PACKAGE_NAME}/install.sh
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS}"
+          export GSETTINGS_SCHEMA_DIR="${HERE}/usr/share/glib-2.0/schemas"
+          exec "${HERE}/usr/bin/gleditor" "$@"
+          EOF
+          chmod +x AppDir/AppRun
 
-      - name: Create tarball
+      - name: Bundle libraries
         run: |
-          PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
-          tar -czvf ${PACKAGE_NAME}.tar.gz ${PACKAGE_NAME}
+          # Copy required shared libraries
+          mkdir -p AppDir/usr/lib
+          
+          # Get list of dependencies
+          ldd build/gleditor | grep "=> /" | awk '{print $3}' | while read lib; do
+            # Skip system libraries that should be on all Linux systems
+            case "$lib" in
+              /lib/x86_64-linux-gnu/libc.so*) continue ;;
+              /lib/x86_64-linux-gnu/libm.so*) continue ;;
+              /lib/x86_64-linux-gnu/libpthread.so*) continue ;;
+              /lib/x86_64-linux-gnu/libdl.so*) continue ;;
+              /lib/x86_64-linux-gnu/librt.so*) continue ;;
+              /lib/x86_64-linux-gnu/ld-linux*) continue ;;
+              *) cp -n "$lib" AppDir/usr/lib/ 2>/dev/null || true ;;
+            esac
+          done
+          
+          # Also copy GTK and related libraries
+          for lib in libgtk-3.so libgdk-3.so libgtksourceview-4.so libpango*.so libcairo*.so libglib*.so libgio*.so libgobject*.so libatk*.so libgdk_pixbuf*.so libEGL*.so libGLESv2*.so; do
+            find /usr/lib -name "$lib*" -exec cp -n {} AppDir/usr/lib/ \; 2>/dev/null || true
+          done
+          
+          # Copy GLib schemas
+          mkdir -p AppDir/usr/share/glib-2.0/schemas
+          cp /usr/share/glib-2.0/schemas/gschemas.compiled AppDir/usr/share/glib-2.0/schemas/ || true
+          
+          # Copy GDK pixbuf loaders
+          mkdir -p AppDir/usr/lib/gdk-pixbuf-2.0
+          cp -r /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/* AppDir/usr/lib/gdk-pixbuf-2.0/ 2>/dev/null || true
+
+      - name: Download and run linuxdeploy
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          
+          # Download linuxdeploy
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+          
+          # Download GTK plugin
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x linuxdeploy-plugin-gtk.sh
+          
+          # Create AppImage
+          export DEPLOY_GTK_VERSION=3
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --plugin gtk \
+            --output appimage \
+            --desktop-file AppDir/usr/share/applications/gleditor.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/gleditor.png
+          
+          # Rename AppImage
+          mv gleditor*.AppImage gleditor-${VERSION}-linux-x86_64.AppImage
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: gleditor-linux-x86_64
-          path: gleditor-*-linux-x86_64.tar.gz
+          path: gleditor-*-linux-x86_64.AppImage
 
   # ============================================================================
-  # macOS Build (macos-15)
+  # macOS Build (Standalone App Bundle)
   # ============================================================================
-  build-macos-15:
-    runs-on: macos-15
-    env:
-      PKG_CONFIG_PATH: /opt/homebrew/opt/gtk+3/lib/pkgconfig:/opt/homebrew/opt/gtksourceview4/lib/pkgconfig:/opt/homebrew/lib/pkgconfig
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          brew install gtk+3 gtksourceview4 pkg-config cmake
-          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig" >> $GITHUB_ENV
-
-      - name: Build with CMake
-        run: |
-          export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig:$PKG_CONFIG_PATH"
-          mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
-          cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
-
-      - name: Get version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          fi
-          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PACKAGE_NAME=gleditor-${VERSION}-macos-arm64-m15" >> $GITHUB_OUTPUT
-
-      - name: Create macOS package
-        run: |
-          PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
-          mkdir -p ${PACKAGE_NAME}
-          
-          if [ -d "build/gleditor.app" ]; then
-            cp -R build/gleditor.app ${PACKAGE_NAME}/
-          else
-            mkdir -p ${PACKAGE_NAME}/bin
-            cp build/gleditor ${PACKAGE_NAME}/bin/
-          fi
-          
-          mkdir -p ${PACKAGE_NAME}/share/gleditor
-          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
-          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
-          
-          cp README.md ${PACKAGE_NAME}/
-          cp INSTALL.md ${PACKAGE_NAME}/
-          [ -f "LICENSE" ] && cp LICENSE ${PACKAGE_NAME}/ || true
-          
-          zip -r ${PACKAGE_NAME}.zip ${PACKAGE_NAME}
-
-      - name: Upload macOS 15 artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gleditor-macos-arm64-m15
-          path: gleditor-*-macos-arm64-m15.zip
-
-  # ============================================================================
-  # macOS Build (Apple Silicon)
-  # ============================================================================
-  build-macos-arm:
+  build-macos:
     runs-on: macos-14
     env:
       PKG_CONFIG_PATH: /opt/homebrew/opt/gtk+3/lib/pkgconfig:/opt/homebrew/opt/gtksourceview4/lib/pkgconfig:/opt/homebrew/lib/pkgconfig
@@ -180,7 +186,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install gtk+3 gtksourceview4 pkg-config cmake
+          brew install gtk+3 gtksourceview4 pkg-config cmake dylibbundler
           echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig:$(brew --prefix gtk+3)/lib/pkgconfig:$(brew --prefix gtksourceview4)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Build with CMake
@@ -201,36 +207,173 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "PACKAGE_NAME=gleditor-${VERSION}-macos-arm64" >> $GITHUB_OUTPUT
 
-      - name: Create macOS package
+      - name: Create standalone app bundle
         run: |
           PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
-          mkdir -p ${PACKAGE_NAME}
+          VERSION="${{ steps.version.outputs.VERSION }}"
           
-          if [ -d "build/gleditor.app" ]; then
-            cp -R build/gleditor.app ${PACKAGE_NAME}/
-          else
-            mkdir -p ${PACKAGE_NAME}/bin
-            cp build/gleditor ${PACKAGE_NAME}/bin/
+          # Create app bundle structure
+          APP_BUNDLE="gleditor.app"
+          mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources"
+          mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/gleditor"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/gtksourceview-4"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/icons"
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0"
+          
+          # Copy binary
+          cp build/gleditor "${APP_BUNDLE}/Contents/MacOS/"
+          
+          # Copy data files
+          cp data/gleditor.svg "${APP_BUNDLE}/Contents/Resources/share/gleditor/"
+          cp data/icon.svg "${APP_BUNDLE}/Contents/Resources/share/gleditor/"
+          
+          # Copy GTKSourceView data
+          BREW_PREFIX=$(brew --prefix)
+          cp -r "${BREW_PREFIX}/share/gtksourceview-4/language-specs" "${APP_BUNDLE}/Contents/Resources/share/gtksourceview-4/" || true
+          cp -r "${BREW_PREFIX}/share/gtksourceview-4/styles" "${APP_BUNDLE}/Contents/Resources/share/gtksourceview-4/" || true
+          
+          # Copy GLib schemas
+          cp "${BREW_PREFIX}/share/glib-2.0/schemas/gschemas.compiled" "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas/" || true
+          
+          # Copy icons
+          cp -r "${BREW_PREFIX}/share/icons/hicolor" "${APP_BUNDLE}/Contents/Resources/share/icons/" 2>/dev/null || true
+          cp -r "${BREW_PREFIX}/share/icons/Adwaita" "${APP_BUNDLE}/Contents/Resources/share/icons/" 2>/dev/null || true
+          
+          # Copy GDK pixbuf loaders
+          GDK_PIXBUF_DIR=$(find ${BREW_PREFIX} -name "gdk-pixbuf-2.0" -type d | head -1)
+          if [ -n "$GDK_PIXBUF_DIR" ]; then
+            cp -r "$GDK_PIXBUF_DIR"/* "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0/" 2>/dev/null || true
           fi
           
-          mkdir -p ${PACKAGE_NAME}/share/gleditor
-          cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
-          cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
+          # Create Info.plist
+          cat > "${APP_BUNDLE}/Contents/Info.plist" << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>gleditor-launcher</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.neowall.gleditor</string>
+              <key>CFBundleName</key>
+              <string>gleditor</string>
+              <key>CFBundleDisplayName</key>
+              <string>gleditor</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleSignature</key>
+              <string>????</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+              <key>LSMinimumSystemVersion</key>
+              <string>11.0</string>
+          </dict>
+          </plist>
+          EOF
           
-          cp README.md ${PACKAGE_NAME}/
-          cp INSTALL.md ${PACKAGE_NAME}/
-          [ -f "LICENSE" ] && cp LICENSE ${PACKAGE_NAME}/ || true
-          
-          zip -r ${PACKAGE_NAME}.zip ${PACKAGE_NAME}
+          # Create launcher script that sets up environment
+          cat > "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher" << 'EOF'
+          #!/bin/bash
+          BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          export DYLD_LIBRARY_PATH="${BUNDLE_DIR}/Frameworks:${DYLD_LIBRARY_PATH}"
+          export XDG_DATA_DIRS="${BUNDLE_DIR}/Resources/share:${XDG_DATA_DIRS}"
+          export GSETTINGS_SCHEMA_DIR="${BUNDLE_DIR}/Resources/share/glib-2.0/schemas"
+          export GDK_PIXBUF_MODULE_FILE="${BUNDLE_DIR}/Resources/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+          export GTK_PATH="${BUNDLE_DIR}/Resources"
+          export GTK_EXE_PREFIX="${BUNDLE_DIR}/Resources"
+          export GTK_DATA_PREFIX="${BUNDLE_DIR}/Resources"
+          exec "${BUNDLE_DIR}/MacOS/gleditor" "$@"
+          EOF
+          chmod +x "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher"
 
-      - name: Upload macOS ARM artifact
+      - name: Bundle dylibs with dylibbundler
+        run: |
+          APP_BUNDLE="gleditor.app"
+          BREW_PREFIX=$(brew --prefix)
+          
+          # Use dylibbundler to copy and fix dylib paths
+          dylibbundler -od -b -x "${APP_BUNDLE}/Contents/MacOS/gleditor" \
+            -d "${APP_BUNDLE}/Contents/Frameworks" \
+            -p @executable_path/../Frameworks/ \
+            -s "${BREW_PREFIX}/lib" \
+            -s "${BREW_PREFIX}/opt/gtk+3/lib" \
+            -s "${BREW_PREFIX}/opt/gtksourceview4/lib" \
+            -s "${BREW_PREFIX}/opt/glib/lib" \
+            -s "${BREW_PREFIX}/opt/cairo/lib" \
+            -s "${BREW_PREFIX}/opt/pango/lib" \
+            -s "${BREW_PREFIX}/opt/gdk-pixbuf/lib" \
+            -s "${BREW_PREFIX}/opt/atk/lib" \
+            -s "${BREW_PREFIX}/opt/harfbuzz/lib" \
+            -s "${BREW_PREFIX}/opt/fontconfig/lib" \
+            -s "${BREW_PREFIX}/opt/freetype/lib" \
+            -s "${BREW_PREFIX}/opt/libpng/lib" \
+            -s "${BREW_PREFIX}/opt/pixman/lib" \
+            -s "${BREW_PREFIX}/opt/fribidi/lib" \
+            -s "${BREW_PREFIX}/opt/graphite2/lib" \
+            -s "${BREW_PREFIX}/opt/gettext/lib" \
+            -s "${BREW_PREFIX}/opt/libffi/lib" \
+            -s "${BREW_PREFIX}/opt/pcre2/lib" \
+            -s "/usr/lib" || true
+          
+          echo "Bundled libraries:"
+          ls -la "${APP_BUNDLE}/Contents/Frameworks/"
+
+      - name: Update GDK pixbuf loaders cache
+        run: |
+          APP_BUNDLE="gleditor.app"
+          
+          # Update loaders.cache with relative paths
+          LOADERS_DIR="${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          if [ -d "$LOADERS_DIR" ]; then
+            # Copy loaders to Frameworks and update cache
+            mkdir -p "${APP_BUNDLE}/Contents/Frameworks/gdk-pixbuf-loaders"
+            cp -r "$LOADERS_DIR"/*.so "${APP_BUNDLE}/Contents/Frameworks/gdk-pixbuf-loaders/" 2>/dev/null || true
+            
+            # Fix loader library paths
+            for loader in "${APP_BUNDLE}/Contents/Frameworks/gdk-pixbuf-loaders"/*.so; do
+              if [ -f "$loader" ]; then
+                dylibbundler -of -b -x "$loader" \
+                  -d "${APP_BUNDLE}/Contents/Frameworks" \
+                  -p @executable_path/../Frameworks/ \
+                  -s "$(brew --prefix)/lib" 2>/dev/null || true
+              fi
+            done
+          fi
+
+      - name: Create DMG
+        run: |
+          PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
+          
+          # Create a temporary directory for the DMG contents
+          mkdir -p dmg_contents
+          cp -r gleditor.app dmg_contents/
+          
+          # Create a symbolic link to Applications
+          ln -s /Applications dmg_contents/Applications
+          
+          # Create DMG
+          hdiutil create -volname "gleditor" -srcfolder dmg_contents -ov -format UDZO "${PACKAGE_NAME}.dmg"
+          
+          # Also create a zip for those who prefer it
+          zip -r "${PACKAGE_NAME}.zip" gleditor.app
+
+      - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: gleditor-macos-arm64
-          path: gleditor-*-macos-arm64.zip
+          path: |
+            gleditor-*-macos-arm64.dmg
+            gleditor-*-macos-arm64.zip
 
   # ============================================================================
-  # Windows Build
+  # Windows Build (Standalone with all DLLs)
   # ============================================================================
   build-windows:
     runs-on: windows-latest
@@ -273,17 +416,20 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           echo "PACKAGE_NAME=gleditor-${VERSION}-windows-x86_64" >> $GITHUB_OUTPUT
 
-      - name: Create Windows package
+      - name: Create Windows package with all DLLs
         run: |
           set +e  # Don't exit on errors during DLL copying
           PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
           mkdir -p ${PACKAGE_NAME}
           
+          # Copy executable
           cp build/gleditor.exe ${PACKAGE_NAME}/
           
-          echo "Copying required DLLs..."
-          # Use ldd and copy all mingw64 DLLs
-          ldd build/gleditor.exe | grep "mingw64" | awk '{print $3}' > /tmp/dlls.txt || true
+          echo "=== Copying required DLLs ==="
+          
+          # Use ntldd to get all dependencies recursively
+          ntldd -R build/gleditor.exe 2>/dev/null | grep -i mingw64 | awk '{print $3}' | sort -u > /tmp/dlls.txt
+          
           while IFS= read -r dll; do
             if [ -f "$dll" ]; then
               echo "Copying: $dll"
@@ -291,28 +437,74 @@ jobs:
             fi
           done < /tmp/dlls.txt
           
-          # Also copy common GTK DLLs directly as backup
-          for dll in /mingw64/bin/lib*.dll /mingw64/bin/gdk*.dll /mingw64/bin/gtk*.dll /mingw64/bin/glib*.dll /mingw64/bin/gobject*.dll /mingw64/bin/gio*.dll /mingw64/bin/pango*.dll /mingw64/bin/cairo*.dll /mingw64/bin/fontconfig*.dll /mingw64/bin/freetype*.dll; do
-            [ -f "$dll" ] && cp "$dll" ${PACKAGE_NAME}/ 2>/dev/null || true
+          # Ensure core GTK DLLs are included
+          echo "=== Ensuring core DLLs ==="
+          for pattern in \
+            "libgtk-3-*.dll" \
+            "libgdk-3-*.dll" \
+            "libgtksourceview-4-*.dll" \
+            "libgio-2.0-*.dll" \
+            "libglib-2.0-*.dll" \
+            "libgobject-2.0-*.dll" \
+            "libgmodule-2.0-*.dll" \
+            "libpango-1.0-*.dll" \
+            "libpangocairo-1.0-*.dll" \
+            "libpangowin32-1.0-*.dll" \
+            "libcairo-*.dll" \
+            "libcairo-gobject-*.dll" \
+            "libgdk_pixbuf-2.0-*.dll" \
+            "libatk-1.0-*.dll" \
+            "libepoxy-*.dll" \
+            "libfontconfig-*.dll" \
+            "libfreetype-*.dll" \
+            "libharfbuzz-*.dll" \
+            "libpixman-1-*.dll" \
+            "libpng16-*.dll" \
+            "libjpeg-*.dll" \
+            "libtiff-*.dll" \
+            "libffi-*.dll" \
+            "libintl-*.dll" \
+            "libiconv-*.dll" \
+            "libpcre2-8-*.dll" \
+            "libfribidi-*.dll" \
+            "libexpat-*.dll" \
+            "libbz2-*.dll" \
+            "libbrotli*.dll" \
+            "libgraphite2.dll" \
+            "zlib1.dll" \
+            "libzstd.dll" \
+            "liblzma-*.dll" \
+            "libwinpthread-*.dll" \
+            "libgcc_s_seh-*.dll" \
+            "libstdc++-*.dll" \
+            ; do
+            for dll in /mingw64/bin/${pattern}; do
+              [ -f "$dll" ] && cp -n "$dll" ${PACKAGE_NAME}/ 2>/dev/null || true
+            done
           done
           
-          # Copy GDK pixbuf loaders
-          [ -d "/mingw64/lib/gdk-pixbuf-2.0" ] && cp -r /mingw64/lib/gdk-pixbuf-2.0 ${PACKAGE_NAME}/ || true
+          echo "=== Copying GTK resources ==="
           
-          # Copy GTK settings and schemas
+          # Copy GDK pixbuf loaders
+          mkdir -p ${PACKAGE_NAME}/lib/gdk-pixbuf-2.0/2.10.0/loaders
+          cp /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders/*.dll ${PACKAGE_NAME}/lib/gdk-pixbuf-2.0/2.10.0/loaders/ 2>/dev/null || true
+          cp /mingw64/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache ${PACKAGE_NAME}/lib/gdk-pixbuf-2.0/2.10.0/ 2>/dev/null || true
+          
+          # Copy GLib schemas
           mkdir -p ${PACKAGE_NAME}/share/glib-2.0/schemas
           cp /mingw64/share/glib-2.0/schemas/gschemas.compiled ${PACKAGE_NAME}/share/glib-2.0/schemas/ 2>/dev/null || true
           
-          # Copy GTK icons
+          # Copy GTK settings
+          mkdir -p ${PACKAGE_NAME}/etc/gtk-3.0
+          echo '[Settings]' > ${PACKAGE_NAME}/etc/gtk-3.0/settings.ini
+          echo 'gtk-theme-name=Windows-10' >> ${PACKAGE_NAME}/etc/gtk-3.0/settings.ini
+          
+          # Copy icons
           mkdir -p ${PACKAGE_NAME}/share/icons
           cp -r /mingw64/share/icons/Adwaita ${PACKAGE_NAME}/share/icons/ 2>/dev/null || true
           cp -r /mingw64/share/icons/hicolor ${PACKAGE_NAME}/share/icons/ 2>/dev/null || true
           
-          # Copy GTK theme
-          mkdir -p ${PACKAGE_NAME}/share/themes
-          cp -r /mingw64/share/themes/Default ${PACKAGE_NAME}/share/themes/ 2>/dev/null || true
-          
-          # Copy GtkSourceView language specs
+          # Copy GTKSourceView data
           mkdir -p ${PACKAGE_NAME}/share/gtksourceview-4
           cp -r /mingw64/share/gtksourceview-4/* ${PACKAGE_NAME}/share/gtksourceview-4/ 2>/dev/null || true
           
@@ -321,14 +513,16 @@ jobs:
           cp data/gleditor.svg ${PACKAGE_NAME}/share/gleditor/
           cp data/icon.svg ${PACKAGE_NAME}/share/gleditor/
           
+          # Copy documentation
           cp README.md ${PACKAGE_NAME}/
           cp INSTALL.md ${PACKAGE_NAME}/
           [ -f "LICENSE" ] && cp LICENSE ${PACKAGE_NAME}/ || true
           
-          echo "Package contents:"
+          echo "=== Package contents ==="
           ls -la ${PACKAGE_NAME}/
+          echo "=== DLL count: $(ls -1 ${PACKAGE_NAME}/*.dll 2>/dev/null | wc -l) ==="
           
-          set -e  # Re-enable exit on error
+          set -e
 
       - name: Create Windows ZIP
         shell: pwsh
@@ -351,11 +545,8 @@ jobs:
   # Create Release
   # ============================================================================
   create-release:
-    needs: [build-linux, build-macos-15, build-macos-arm, build-windows]
-    if: |
-      always() && 
-      needs.build-linux.result == 'success' &&
-      (needs.build-macos-15.result == 'success' || needs.build-macos-arm.result == 'success')
+    needs: [build-linux, build-macos, build-windows]
+    if: always() && needs.build-linux.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -393,27 +584,44 @@ jobs:
           body: |
             ## gleditor v${{ steps.get_version.outputs.VERSION }}
             
-            The Shader Editor That Actually Works - A standalone OpenGL ES shader editor with real-time preview and syntax highlighting.
+            **The Shader Editor That Actually Works™** - A standalone OpenGL ES shader editor with real-time preview and syntax highlighting.
             
-            ### Downloads
+            ### 📦 Standalone Downloads (No Dependencies Required!)
             
-            | Platform | Architecture | File |
-            |----------|--------------|------|
-            | Linux | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64.tar.gz` |
-            | macOS | Apple Silicon (M15) | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64-m15.zip` |
-            | macOS | Apple Silicon (M14) | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64.zip` |
-            | Windows | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-windows-x86_64.zip` |
+            | Platform | Architecture | File | Notes |
+            |----------|--------------|------|-------|
+            | **Linux** | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-linux-x86_64.AppImage` | Just download and run! |
+            | **macOS** | Apple Silicon | `gleditor-${{ steps.get_version.outputs.VERSION }}-macos-arm64.dmg` | Drag to Applications |
+            | **Windows** | x86_64 | `gleditor-${{ steps.get_version.outputs.VERSION }}-windows-x86_64.zip` | Extract and run `gleditor.exe` |
             
-            ### Quick Start
+            ### 🚀 Quick Start
             
-            **Linux:** Extract and run `./bin/gleditor` or `./install.sh`
-            **macOS:** Extract and run the binary
-            **Windows:** Extract and run `gleditor.exe`
+            **Linux:**
+            ```bash
+            chmod +x gleditor-*.AppImage
+            ./gleditor-*.AppImage
+            ```
             
-            See [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/INSTALL.md) for detailed instructions.
+            **macOS:**
+            - Open the DMG file
+            - Drag gleditor.app to Applications
+            - Right-click and select "Open" (first time only, to bypass Gatekeeper)
+            
+            **Windows:**
+            - Extract the ZIP file
+            - Double-click `gleditor.exe`
+            
+            ### ✨ Features
+            - Real-time shader preview
+            - GLSL syntax highlighting
+            - Shadertoy compatibility
+            - 170+ autocomplete items
+            - Multiple shader templates
+            
+            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation.
           files: |
-            artifacts/gleditor-linux-x86_64/*.tar.gz
-            artifacts/gleditor-macos-arm64-m15/*.zip
+            artifacts/gleditor-linux-x86_64/*.AppImage
+            artifacts/gleditor-macos-arm64/*.dmg
             artifacts/gleditor-macos-arm64/*.zip
             artifacts/gleditor-windows-x86_64/*.zip
         env:
