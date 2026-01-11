@@ -369,10 +369,31 @@ jobs:
       - name: Create DMG
         run: |
           PACKAGE_NAME="${{ steps.version.outputs.PACKAGE_NAME }}"
+          APP_BUNDLE="gleditor.app"
+          
+          # Ad-hoc sign the app bundle (helps with Gatekeeper)
+          echo "=== Ad-hoc signing app bundle ==="
+          
+          # Sign all dylibs first
+          find "${APP_BUNDLE}/Contents/Frameworks" -name "*.dylib" -exec codesign --force --sign - {} \; 2>/dev/null || true
+          
+          # Sign the main binary
+          codesign --force --sign - "${APP_BUNDLE}/Contents/MacOS/gleditor" 2>/dev/null || true
+          
+          # Sign the launcher
+          codesign --force --sign - "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher" 2>/dev/null || true
+          
+          # Sign the entire app bundle
+          codesign --force --deep --sign - "${APP_BUNDLE}" 2>/dev/null || true
+          
+          # Remove any quarantine attributes
+          xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
+          
+          echo "=== Creating DMG ==="
           
           # Create a temporary directory for the DMG contents
           mkdir -p dmg_contents
-          cp -r gleditor.app dmg_contents/
+          cp -r "${APP_BUNDLE}" dmg_contents/
           
           # Create a symbolic link to Applications
           ln -s /Applications dmg_contents/Applications
@@ -381,7 +402,7 @@ jobs:
           hdiutil create -volname "gleditor" -srcfolder dmg_contents -ov -format UDZO "${PACKAGE_NAME}.dmg"
           
           # Also create a zip for those who prefer it
-          zip -r "${PACKAGE_NAME}.zip" gleditor.app
+          zip -r "${PACKAGE_NAME}.zip" "${APP_BUNDLE}"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -622,9 +643,12 @@ jobs:
             ```
             
             **macOS:**
-            - Open the DMG file
-            - Drag gleditor.app to Applications
-            - Right-click and select "Open" (first time only, to bypass Gatekeeper)
+            1. Open the DMG file
+            2. Drag gleditor.app to Applications
+            3. **First launch (bypass Gatekeeper):**
+               - Right-click gleditor.app and select "Open"
+               - Click "Open" in the dialog that appears
+               - OR run in Terminal: `xattr -cr /Applications/gleditor.app && open /Applications/gleditor.app`
             
             **Windows:**
             - Extract the ZIP file
