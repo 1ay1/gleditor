@@ -163,14 +163,19 @@ if(PLATFORM_WINDOWS)
     endif()
 
 elseif(PLATFORM_MACOS)
-    # macOS: Create app bundle
-    set_target_properties(gleditor PROPERTIES
-        MACOSX_BUNDLE TRUE
-        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/data/Info.plist.in"
-        MACOSX_BUNDLE_BUNDLE_NAME "gleditor"
-        MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
-    )
+    # macOS: Create app bundle (unless disabled for CI bundling)
+    option(SKIP_MACOS_BUNDLE "Skip creating macOS app bundle" OFF)
+    if(NOT SKIP_MACOS_BUNDLE)
+        set_target_properties(gleditor PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/data/Info.plist.in"
+            MACOSX_BUNDLE_BUNDLE_NAME "gleditor"
+            MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+            MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        )
+    else()
+        message(STATUS "Skipping macOS bundle creation (SKIP_MACOS_BUNDLE=ON)")
+    endif()
 endif()
 
 # Installation
