@@ -32,8 +32,12 @@
  * Unified OpenGL Header Include
  * ============================================ */
 #ifdef USE_EPOXY
-    /* Windows/macOS: Use libepoxy for function loading */
+    /* Windows: Use libepoxy for function loading */
     #include <epoxy/gl.h>
+#elif defined(PLATFORM_MACOS) || defined(USE_OPENGL_COMPAT)
+    /* macOS: Use OpenGL framework */
+    #include <OpenGL/gl.h>
+    #include <OpenGL/glext.h>
 #elif defined(HAVE_GLES3)
     /* Linux: OpenGL ES 3.x */
     #include <GLES3/gl3.h>
@@ -41,7 +45,7 @@
     /* Linux: OpenGL ES 2.0 */
     #include <GLES2/gl2.h>
 #else
-    /* Fallback: Desktop OpenGL */
+    /* Fallback: Desktop OpenGL (Linux/Unix) */
     #include <GL/gl.h>
 #endif
 
