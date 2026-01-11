@@ -251,20 +251,57 @@ jobs:
           
           # Copy GTKSourceView data
           BREW_PREFIX=$(brew --prefix)
+          echo "BREW_PREFIX: ${BREW_PREFIX}"
+          
           cp -r "${BREW_PREFIX}/share/gtksourceview-4/language-specs" "${APP_BUNDLE}/Contents/Resources/share/gtksourceview-4/" || true
           cp -r "${BREW_PREFIX}/share/gtksourceview-4/styles" "${APP_BUNDLE}/Contents/Resources/share/gtksourceview-4/" || true
           
           # Copy GLib schemas
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas"
           cp "${BREW_PREFIX}/share/glib-2.0/schemas/gschemas.compiled" "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas/" || true
           
+          # Copy ALL GLib schemas source files and recompile
+          cp "${BREW_PREFIX}"/share/glib-2.0/schemas/*.xml "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas/" 2>/dev/null || true
+          glib-compile-schemas "${APP_BUNDLE}/Contents/Resources/share/glib-2.0/schemas/" 2>/dev/null || true
+          
           # Copy icons
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/icons"
           cp -r "${BREW_PREFIX}/share/icons/hicolor" "${APP_BUNDLE}/Contents/Resources/share/icons/" 2>/dev/null || true
           cp -r "${BREW_PREFIX}/share/icons/Adwaita" "${APP_BUNDLE}/Contents/Resources/share/icons/" 2>/dev/null || true
           
+          # Copy GTK themes
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/share/themes"
+          cp -r "${BREW_PREFIX}/share/themes/"* "${APP_BUNDLE}/Contents/Resources/share/themes/" 2>/dev/null || true
+          
+          # Copy GTK settings
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/etc/gtk-3.0"
+          cat > "${APP_BUNDLE}/Contents/Resources/etc/gtk-3.0/settings.ini" << 'SETTINGS'
+          [Settings]
+          gtk-theme-name=Adwaita
+          gtk-icon-theme-name=Adwaita
+          gtk-font-name=San Francisco 13
+          gtk-application-prefer-dark-theme=1
+          SETTINGS
+          
           # Copy GDK pixbuf loaders
-          GDK_PIXBUF_DIR=$(find ${BREW_PREFIX} -name "gdk-pixbuf-2.0" -type d | head -1)
-          if [ -n "$GDK_PIXBUF_DIR" ]; then
-            cp -r "$GDK_PIXBUF_DIR"/* "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0/" 2>/dev/null || true
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          GDK_PIXBUF_BASE="${BREW_PREFIX}/lib/gdk-pixbuf-2.0"
+          if [ -d "$GDK_PIXBUF_BASE" ]; then
+            cp -r "$GDK_PIXBUF_BASE"/* "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0/" 2>/dev/null || true
+          fi
+          
+          # Copy GTK immodules
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/lib/gtk-3.0/3.0.0/immodules"
+          GTK_LIB_DIR="${BREW_PREFIX}/lib/gtk-3.0"
+          if [ -d "$GTK_LIB_DIR" ]; then
+            cp -r "$GTK_LIB_DIR"/* "${APP_BUNDLE}/Contents/Resources/lib/gtk-3.0/" 2>/dev/null || true
+          fi
+          
+          # Copy Pango modules
+          mkdir -p "${APP_BUNDLE}/Contents/Resources/lib/pango"
+          PANGO_LIB_DIR="${BREW_PREFIX}/lib/pango"
+          if [ -d "$PANGO_LIB_DIR" ]; then
+            cp -r "$PANGO_LIB_DIR"/* "${APP_BUNDLE}/Contents/Resources/lib/pango/" 2>/dev/null || true
           fi
           
           # Create Info.plist
@@ -297,19 +334,44 @@ jobs:
           </plist>
           EOF
           
-          # Create launcher script that sets up environment
-          cat > "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher" << 'EOF'
+          # Create launcher script that sets up GTK environment
+          cat > "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher" << 'LAUNCHER'
           #!/bin/bash
+          
+          # Get the absolute path to the bundle
           BUNDLE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+          RESOURCES="${BUNDLE_DIR}/Resources"
+          
+          # Set up library paths
           export DYLD_LIBRARY_PATH="${BUNDLE_DIR}/Frameworks:${DYLD_LIBRARY_PATH}"
-          export XDG_DATA_DIRS="${BUNDLE_DIR}/Resources/share:${XDG_DATA_DIRS}"
-          export GSETTINGS_SCHEMA_DIR="${BUNDLE_DIR}/Resources/share/glib-2.0/schemas"
-          export GDK_PIXBUF_MODULE_FILE="${BUNDLE_DIR}/Resources/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
-          export GTK_PATH="${BUNDLE_DIR}/Resources"
-          export GTK_EXE_PREFIX="${BUNDLE_DIR}/Resources"
-          export GTK_DATA_PREFIX="${BUNDLE_DIR}/Resources"
+          
+          # GTK environment variables
+          export GTK_PATH="${RESOURCES}/lib/gtk-3.0"
+          export GTK_EXE_PREFIX="${RESOURCES}"
+          export GTK_DATA_PREFIX="${RESOURCES}"
+          export GTK_IM_MODULE_FILE="${RESOURCES}/lib/gtk-3.0/3.0.0/immodules.cache"
+          export GTK_THEME="Adwaita:dark"
+          
+          # GLib/GIO settings
+          export XDG_DATA_DIRS="${RESOURCES}/share:${XDG_DATA_DIRS:-/usr/share}"
+          export GSETTINGS_SCHEMA_DIR="${RESOURCES}/share/glib-2.0/schemas"
+          export GIO_MODULE_DIR="${RESOURCES}/lib/gio/modules"
+          
+          # GDK Pixbuf
+          export GDK_PIXBUF_MODULE_FILE="${RESOURCES}/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache"
+          export GDK_PIXBUF_MODULEDIR="${RESOURCES}/lib/gdk-pixbuf-2.0/2.10.0/loaders"
+          
+          # Pango
+          export PANGO_LIBDIR="${RESOURCES}/lib"
+          export PANGO_SYSCONFDIR="${RESOURCES}/etc"
+          
+          # Font config
+          export FONTCONFIG_PATH="${RESOURCES}/etc/fonts"
+          export FONTCONFIG_FILE="${RESOURCES}/etc/fonts/fonts.conf"
+          
+          # Run the app
           exec "${BUNDLE_DIR}/MacOS/gleditor" "$@"
-          EOF
+          LAUNCHER
           chmod +x "${APP_BUNDLE}/Contents/MacOS/gleditor-launcher"
 
       - name: Bundle dylibs with dylibbundler
