@@ -195,6 +195,14 @@ jobs:
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ..
           cmake --build . --config ${{ env.BUILD_TYPE }} -j$(sysctl -n hw.ncpu)
+          
+          # Show what was built
+          echo "=== Build output ==="
+          ls -la
+          if [ -d "gleditor.app" ]; then
+            echo "=== App bundle contents ==="
+            ls -la gleditor.app/Contents/MacOS/
+          fi
 
       - name: Get version
         id: version
@@ -223,8 +231,19 @@ jobs:
           mkdir -p "${APP_BUNDLE}/Contents/Resources/share/icons"
           mkdir -p "${APP_BUNDLE}/Contents/Resources/lib/gdk-pixbuf-2.0"
           
-          # Copy binary
-          cp build/gleditor "${APP_BUNDLE}/Contents/MacOS/"
+          # Copy binary - handle both plain binary and app bundle from CMake
+          if [ -f "build/gleditor.app/Contents/MacOS/gleditor" ]; then
+            echo "Copying from CMake app bundle..."
+            cp "build/gleditor.app/Contents/MacOS/gleditor" "${APP_BUNDLE}/Contents/MacOS/"
+          elif [ -f "build/gleditor" ]; then
+            echo "Copying plain binary..."
+            cp "build/gleditor" "${APP_BUNDLE}/Contents/MacOS/"
+          else
+            echo "ERROR: Cannot find gleditor binary!"
+            echo "Contents of build directory:"
+            find build -type f -name "gleditor*"
+            exit 1
+          fi
           
           # Copy data files
           cp data/gleditor.svg "${APP_BUNDLE}/Contents/Resources/share/gleditor/"
